@@ -5,7 +5,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 
 from backend.schemas import RecommendationResponse, UserPreferenceRequest
 from backend.services.ai_engine import generate_recommendations
@@ -38,11 +38,15 @@ FRONTEND_INDEX = Path(__file__).resolve().parent.parent / "frontend" / "index.ht
 
 @app.get("/")
 def serve_frontend():
-    """프론트엔드 단일 페이지 앱을 반환합니다 (모바일 브라우저 캐시 방지 헤더 포함)."""
+    """프론트엔드 단일 페이지 앱을 반환합니다 (모바일/데스크톱 브라우저 캐시 완전 차단 헤더 포함)."""
     if FRONTEND_INDEX.exists():
-        return FileResponse(
-            FRONTEND_INDEX,
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        return HTMLResponse(
+            content=FRONTEND_INDEX.read_text(encoding="utf-8"),
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
         )
     return {"service": "MenuFit API", "status": "running"}
 
