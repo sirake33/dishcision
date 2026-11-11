@@ -3,8 +3,8 @@ from pydantic import BaseModel, Field
 
 
 class UserPreferenceRequest(BaseModel):
-    latitude: float = Field(default=37.2118, description="위도 (협성대 기본값)")
-    longitude: float = Field(default=126.9765, description="경도")
+    latitude: float = Field(default=37.212768, description="위도 (협성대 본관 기본값)")
+    longitude: float = Field(default=126.952380, description="경도 (협성대 본관 기본값)")
     delivery_mode: str = Field(
         default="walk",
         description="'walk'(도보 방문) 또는 'delivery'(배달 주문)",

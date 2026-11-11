@@ -59,8 +59,8 @@ def health_check() -> Dict[str, str]:
 
 @app.get("/api/address")
 def read_address(
-    lat: float = Query(default=37.2118, description="위도"),
-    lon: float = Query(default=126.9765, description="경도"),
+    lat: float = Query(default=37.212768, description="위도 (협성대 기본값)"),
+    lon: float = Query(default=126.952380, description="경도 (협성대 기본값)"),
 ) -> Dict[str, str]:
     """좌표를 카카오 역지오코딩으로 변환해 한글 행정구역 주소를 반환합니다."""
     return {"address_name": get_address_from_coords(lat, lon)}
@@ -76,8 +76,8 @@ def search_location(
 
 @app.get("/api/weather")
 def read_weather(
-    lat: float = Query(default=37.2118, description="위도"),
-    lon: float = Query(default=126.9765, description="경도"),
+    lat: float = Query(default=37.212768, description="위도 (협성대 기본값)"),
+    lon: float = Query(default=126.952380, description="경도 (협성대 기본값)"),
 ) -> Dict[str, Any]:
     """현재 위치의 실시간 날씨 정보를 반환합니다."""
     return get_current_weather(lat, lon)

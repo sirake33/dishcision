@@ -100,8 +100,19 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="locationModalTitle"
+    onclick="if (event.target === this) closeLocationModal();"
   >
-    <div class="w-full max-w-[390px] bg-white rounded-[28px] p-5 sm:p-6 shadow-[0_28px_72px_-12px_rgba(15,23,42,0.35)] border border-slate-100 text-center animate-fade-slide my-auto">
+    <div class="relative w-full max-w-[390px] bg-white rounded-[28px] p-5 sm:p-6 shadow-[0_28px_72px_-12px_rgba(15,23,42,0.35)] border border-slate-100 text-center animate-fade-slide my-auto">
+      <button
+        id="modalCloseBtn"
+        type="button"
+        onclick="closeLocationModal()"
+        aria-label="위치 설정 창 닫기"
+        title="닫기 (ESC)"
+        class="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-500 hover:text-slate-800 flex items-center justify-center text-sm font-bold transition-colors"
+      >
+        ✕
+      </button>
       <div class="mx-auto w-13 h-13 w-12 h-12 rounded-2xl bg-brand-50 border border-brand-200/80 flex items-center justify-center text-2xl mb-3 shadow-sm">
         📍
       </div>
@@ -672,8 +683,8 @@
       : "http://localhost:8000";
 
     const DEFAULT_COORDS = {
-      latitude: 37.2118,
-      longitude: 126.9765,
+      latitude: 37.212768,
+      longitude: 126.952380,
       address_name: "경기도 화성시 효행구 봉담읍",
     };
 
@@ -981,6 +992,7 @@
     const WATCH_SAMPLE_WINDOW_MS = 3800;
     let activeGeoWatchId = null;
     let activeGeoTimerId = null;
+    let activeGeoSessionId = 0;
     let pendingDetectedLocation = null;
 
     function isMobileGpsDevice() {
@@ -1012,12 +1024,34 @@
     }
 
     function closeLocationModal() {
+      activeGeoSessionId += 1;
       stopGeoWatcher();
+      updateLocationText();
+      const locateBtn = document.getElementById("locateBtn");
+      if (locateBtn) {
+        locateBtn.disabled = false;
+        locateBtn.classList.remove("opacity-60");
+      }
+      const modalBtn = document.getElementById("modalStartGpsBtn");
+      if (modalBtn && modalBtn.disabled) {
+        modalBtn.disabled = false;
+        modalBtn.classList.remove("opacity-75");
+        modalBtn.innerHTML = "<span>📍 현재 위치로 시작하기</span>";
+      }
       const modal = document.getElementById("locationModal");
       if (modal) {
         modal.classList.add("hidden");
       }
     }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      const modal = document.getElementById("locationModal");
+      if (modal && !modal.classList.contains("hidden")) {
+        event.preventDefault();
+        closeLocationModal();
+      }
+    });
 
     function setModalStatus(message, tone = "info") {
       const statusEl = document.getElementById("modalGpsStatus");
@@ -1124,6 +1158,8 @@
 
     function acquireHighAccuracyGps({ fromModal = false } = {}) {
       stopGeoWatcher();
+      activeGeoSessionId += 1;
+      const sessionId = activeGeoSessionId;
       const locEl = document.getElementById("locationText");
       const locateBtn = document.getElementById("locateBtn");
       const modalBtn = document.getElementById("modalStartGpsBtn");
@@ -1161,7 +1197,7 @@
       let finalized = false;
 
       const finalizeSuccess = async (pos) => {
-        if (finalized) return;
+        if (finalized || sessionId !== activeGeoSessionId) return;
         finalized = true;
         stopGeoWatcher();
 
@@ -1169,6 +1205,7 @@
         const lon = Number(pos.coords.longitude.toFixed(6));
         const accuracy = Number(pos.coords.accuracy) || 9999;
         const resolvedAddr = await resolveAddressOnly(lat, lon);
+        if (sessionId !== activeGeoSessionId) return;
         const isMobile = isMobileGpsDevice();
         const isTrustworthyHardwareGps = isMobile && accuracy <= HIGH_ACCURACY_TARGET_M;
 
@@ -1218,7 +1255,7 @@
       };
 
       const finalizeError = async (err) => {
-        if (finalized) return;
+        if (finalized || sessionId !== activeGeoSessionId) return;
         finalized = true;
         stopGeoWatcher();
 
@@ -1906,6 +1943,14 @@
               );
               const safeFiller = escapeHtml(spec.filler_recommendation || "");
 
+              const isGenerousGroup =
+                state.budget_tier === "generous_group" ||
+                calPerPerson > 0 ||
+                safeFiller.includes("2인 이상");
+              const noShortfallLabel = isGenerousGroup
+                ? "✅ 2인 이상 푸짐하게 즐기는 여유 세트!"
+                : "✅ 추가 메뉴 없이 1인 단독 배달 바로 가능!";
+
               const shortfallBlock =
                 shortfall > 0
                   ? `
@@ -1919,7 +1964,7 @@
                   `
                   : `
                     <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100/90 border border-emerald-200 text-emerald-800 text-[11px] font-extrabold w-full">
-                      <span>✅ 추가 메뉴 없이 1인 단독 배달 바로 가능!</span>
+                      <span>${noShortfallLabel}</span>
                     </div>
                   `;
 

@@ -19,8 +19,8 @@ KAKAO_LOCAL_ADDRESS_URL = "https://dapi.kakao.com/v2/local/search/address.json"
 KAKAO_COORD2REGION_URL = "https://dapi.kakao.com/v2/local/geo/coord2regioncode.json"
 KAKAO_COORD2ADDRESS_URL = "https://dapi.kakao.com/v2/local/geo/coord2address.json"
 
-DEFAULT_LAT = 37.2118
-DEFAULT_LON = 126.9765
+DEFAULT_LAT = 37.212768
+DEFAULT_LON = 126.952380
 
 WALK_RADIUS_METERS = 1000
 DELIVERY_RADIUS_METERS = 3500

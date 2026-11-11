@@ -833,6 +833,62 @@ _BLOG_CLICHE_RE = re.compile(
 _PRESCRIPTIVE_DIET_MENU_RE = re.compile(
     r"(?:닭가슴살|연두부|두부\s*샐러드|두부샐러드|두부와\s*샐러드|잎채소\s*샐러드|곤약\s*(?:밥|면|젤리)|그릭\s*요거트|오트밀)"
 )
+_COMPARISON_PATTERN_RE = re.compile(
+    r"(?:"
+    r"(?<![가-힣A-Za-z0-9])(?:인근|주변|근처|동종|타사|경쟁사|경쟁점|프랜차이즈)\s*(?:(?:[가-힣A-Za-z0-9]+\s+){0,2}|[가-힣A-Za-z0-9]*\s*)대비"
+    r"|(?<![가-힣A-Za-z0-9])(?:타|다른|여타|일반|시중)\s+(?:[가-힣A-Za-z0-9]+\s+){0,2}대비"
+    r"|(?!(?:장점|단점|강점|이점|시점|관점|초점|기준점)\s*대비)(?<![가-힣A-Za-z0-9])[가-힣A-Za-z0-9]{1,}점\s*대비"
+    r"|(?<![가-힣A-Za-z0-9])(?:매장|식당|가게|업소|업종|업계|체인|국밥집|분식집|백반집|고깃집|중국집|중식집|분식류|백반류|외식류)\s*대비"
+    r"|(?<![가-힣A-Za-z0-9])타\s*(?:매장|식당|가게|업소|지점|점포|브랜드)"
+    r"|(?<![가-힣A-Za-z0-9])동종\s*(?:매장|식당|업종|업체|업계|메뉴|브랜드)"
+    r"|(?<![가-힣A-Za-z0-9])다른\s*(?:매장|식당|가게|곳|집|지점|브랜드)"
+    r"|(?<![가-힣A-Za-z0-9])주변\s*(?:매장|식당|가게|업소|집|맛집)"
+    r"|(?<![가-힣A-Za-z0-9])인근\s*(?:매장|식당|가게|맛집|[가-힣]+류)"
+    r"|(?<![가-힣A-Za-z0-9])일반\s*(?:매장|식당|백반|분식|외식|[가-힣]+류)"
+    r"|[가-힣]+류보다"
+    r"|(?<![가-힣A-Za-z0-9])(?:타|다른|주변|인근|기존|일반)\s*(?:매장|식당|가게|곳|집|백반|분식|음식)보다"
+    r")"
+)
+_FAKE_STAT_PERCENT_BEFORE_RE = re.compile(
+    r"(?:리뷰|후기|방문자|고객|손님|이용자|대다수|설문|응답자?|재방문율|만족도|선호도|추천율|호평|평점|할인율?|확률)\s*(?:의|자)?\s*$"
+)
+_FAKE_STAT_PERCENT_AFTER_RE = re.compile(
+    r"^\s*(?:가|이|의)?\s*(?:만족|재방문|호평|추천|응답|선호|할인|찬사|달합|달하|기록)"
+)
+_INGREDIENT_PERCENT_CONTEXT_RE = re.compile(
+    r"(?:국내산|수입산|한우|육우|돈육|계육|소고기|돼지고기|닭고기|닭다리살|닭가슴살|순살|안심|등심|생등심|삼겹|목살|살코기|사골|양지|차돌|곱창|"
+    r"모짜렐라|통모짜|자연치즈|체다|치즈|버터|우유|생크림|통밀|호밀|메밀|현미|백미|잡곡|오트|귀리|쌀|밀가루|감자|전분|"
+    r"원두|아라비카|카카오|다크|말차|녹차|과즙|착즙|생과일|원액|채소|야채|두부|콩|비지|해물|새우|어묵|어육|연육|함량|원육|생면|수제|천연|무첨가|순수|배합)"
+)
+_PAREN_FAKE_PERCENT_RE = re.compile(
+    r"\s*\(\s*(?:약\s*)?(?!100(?:\.0+)?\s*%\s*\))\d+(?:\.\d+)?\s*%\s*\)"
+)
+
+
+def _has_disallowed_percent(text: str) -> bool:
+    """가짜 리뷰 만족도/할인율 통계 퍼센트만 차단하고 '100%' 등 식재료·원재료 수식어는 정상 허용합니다."""
+    raw_text = str(text or "")
+    for match in re.finditer(r"(\d+(?:\.\d+)?)\s*%", raw_text):
+        num_str = match.group(1)
+        start, end = match.span()
+        before = raw_text[max(0, start - 16) : start]
+        after = raw_text[end : min(len(raw_text), end + 16)]
+
+        if _FAKE_STAT_PERCENT_BEFORE_RE.search(before) or _FAKE_STAT_PERCENT_AFTER_RE.search(after):
+            return True
+
+        try:
+            is_hundred = float(num_str) == 100.0
+        except ValueError:
+            is_hundred = False
+        if is_hundred:
+            continue
+
+        window = f"{before} {after}"
+        if not _INGREDIENT_PERCENT_CONTEXT_RE.search(window):
+            return True
+
+    return False
 
 
 def _build_dinner_pairing_guide(
@@ -1184,28 +1240,24 @@ def _sanitize_report(
     summary = re.sub(r'^["\'“”‘’]+|["\'“”‘’]+$', "", summary).strip()
     summary = re.sub(r"^방문자\s*리뷰\s*종합(?:\s*요약)?\s*[:：]\s*", "", summary).strip()
     summary = re.sub(r'^["\'“”‘’]+|["\'“”‘’]+$', "", summary).strip()
-    summary = re.sub(r"\s*\(\s*(?:약\s*)?\d+(?:\.\d+)?\s*%\s*\)", "", summary).strip()
+    summary = _PAREN_FAKE_PERCENT_RE.sub("", summary).strip()
     summary = re.sub(r"실사용\s*만족도가\s*높습니다", "재방문 만족도가 높습니다", summary)
     summary = re.sub(r"실사용\s*만족도", "재방문 만족도", summary)
     summary = re.sub(r"실사용\s*후기", "방문자 후기", summary)
     summary = re.sub(r"실사용", "실제 방문", summary)
-    if not summary or re.search(r"\d+(?:\.\d+)?\s*%", summary):
+    if not summary or _has_disallowed_percent(summary):
         summary = fallback.visitor_review_summary
 
     why_spot = str(getattr(raw_report, "why_this_spot", "") or "").strip()
-    why_spot = re.sub(r"\s*\(\s*(?:약\s*)?\d+(?:\.\d+)?\s*%\s*\)", "", why_spot).strip()
+    why_spot = _PAREN_FAKE_PERCENT_RE.sub("", why_spot).strip()
     why_spot = re.sub(r"실사용\s*만족도", "재방문 만족도", why_spot)
-    comparison_pattern = (
-        r"(?:대비|타\s*매장|동종\s*(?:매장|식당|업종|업체|메뉴)|다른\s*(?:매장|식당|가게|곳)|"
-        r"주변\s*(?:매장|식당|가게|업소)|인근\s*(?:매장|식당|가게|[가-힣]+류)|일반\s*(?:백반|분식|외식|[가-힣]+류)|[가-힣]+류보다)"
-    )
-    has_forced_comparison = bool(re.search(comparison_pattern, why_spot))
+    has_forced_comparison = bool(_COMPARISON_PATTERN_RE.search(why_spot))
     has_cliche_in_why = bool(_BLOG_CLICHE_RE.search(why_spot))
     if (
         not why_spot
         or has_forced_comparison
         or has_cliche_in_why
-        or re.search(r"\d+(?:\.\d+)?\s*%", why_spot)
+        or _has_disallowed_percent(why_spot)
     ):
         why_spot = fallback.why_this_spot
 
@@ -1220,7 +1272,7 @@ def _sanitize_report(
     if (
         selection_logic == why_spot
         or _BLOG_CLICHE_RE.search(selection_logic)
-        or re.search(comparison_pattern, selection_logic)
+        or _COMPARISON_PATTERN_RE.search(selection_logic)
     ):
         selection_logic = fallback.selection_logic
     if _is_meal_kit_store(restaurant, menu_name) and MEAL_KIT_NOTICE not in selection_logic:
@@ -1228,7 +1280,7 @@ def _sanitize_report(
 
     protein_dv = _compute_protein_dv_percent(nutrition.protein_g)
     dinner_guide = str(getattr(raw_report, "dinner_pairing_guide", "") or "").strip()
-    dinner_guide = re.sub(r"\s*\(\s*(?:약\s*)?\d+(?:\.\d+)?\s*%\s*\)", "", dinner_guide).strip()
+    dinner_guide = _PAREN_FAKE_PERCENT_RE.sub("", dinner_guide).strip()
     has_past_tense = bool(
         re.search(
             r"(?:먹었으니|드셨으니|섭취했으니|섭취했으므로|드셨으므로|먹었으므로|골랐으니|드셨기|먹었기|선택했으니|선택하셨으니|드셨다면|먹었다면|채웠으니|즐겼으니|마셨으니)",
@@ -1240,7 +1292,7 @@ def _sanitize_report(
         not dinner_guide
         or has_past_tense
         or has_diet_menu_cliche
-        or re.search(r"\d+(?:\.\d+)?\s*%", dinner_guide)
+        or _has_disallowed_percent(dinner_guide)
     ):
         dinner_guide = fallback.dinner_pairing_guide
 
@@ -1281,6 +1333,7 @@ def _map_restaurant_to_item(
     is_meal_kit: Optional[bool] = None,
     emoji: Optional[str] = None,
     address_name: str = "",
+    budget_tier: str = "",
 ) -> RecommendationItem:
     """백엔드 원본 카카오 식당 객체의 place_name, distance_m, 수학적 distance_display, 배달 스펙, 쿠팡이츠·네이버 포털 검색 리뷰 URL 및 푸드 이모지를 직접 바인딩합니다."""
     place_name = str(restaurant.get("place_name", "")).strip()
@@ -1317,6 +1370,7 @@ def _map_restaurant_to_item(
             estimated_price,
             distance_m=dist_m,
             address_name=address_name,
+            budget_tier=budget_tier,
         )
         delivery_spec_obj = DeliverySpec(
             min_order_price=spec["min_order_price"],
@@ -1515,6 +1569,7 @@ def _materialize_group(
                 is_meal_kit=is_meal_kit,
                 emoji=emoji_val,
                 address_name=address_name,
+                budget_tier=preference.budget_tier,
             )
         )
 

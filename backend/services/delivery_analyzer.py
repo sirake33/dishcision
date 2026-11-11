@@ -378,6 +378,7 @@ def analyze_delivery_spec(
     *,
     distance_m: Optional[int] = None,
     address_name: str = "",
+    budget_tier: str = "",
 ) -> Dict[str, Any]:
     """
     실제 배달앱 기준 매장별 최소주문금액, 추천 메뉴 가격 차액(Gap),
@@ -399,9 +400,12 @@ def analyze_delivery_spec(
     coupang_wow_benefit = "🚀 쿠팡이츠 와우 배달비 0원"
 
     if shortfall_amount == 0:
-        min_order_solution = (
-            "✅ 추가 사이드 없이 이 메뉴 단품만으로 최소주문금액을 즉시 충족합니다!"
-        )
+        if budget_tier == "generous_group":
+            min_order_solution = "✅ 2인 이상 푸짐하게 즐기는 여유 세트!"
+        else:
+            min_order_solution = (
+                "✅ 추가 사이드 없이 이 메뉴 단품만으로 최소주문금액을 즉시 충족합니다!"
+            )
     else:
         combo_items, added_total = _solve_best_side_combo(sides, shortfall_amount)
         final_total = menu_price_int + added_total
