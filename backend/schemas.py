@@ -41,11 +41,11 @@ class AIAnalysisReport(BaseModel):
     )
     visitor_review_summary: str = Field(
         ...,
-        description="따옴표 인용 없이 방문자 평가를 AI가 종합해 정리한 객관적 1줄 요약 (예: '~라는 평가가 지배적이며 실사용 만족도가 높습니다.')",
+        description="따옴표 인용 없이 방문자 평가를 AI가 종합해 정리한 외식 리뷰 1줄 요약 ('실사용 만족도' 등 IT·전자제품 어휘 금지, 예: '~라는 평가가 지배적이며 재방문 만족도가 높습니다.')",
     )
     why_this_spot: str = Field(
         ...,
-        description="임의의 퍼센트(%) 숫자 없이 주변 인근 동종 식당들과 비교한 팩트 중심 서술형 우위 1~2줄",
+        description="임의의 퍼센트(%) 없이 인근 동종 매장 대비 조리 시간·단백질 밀도·휴대성·가성비 등 매장·음식 자체의 객관적 강점을 서술하는 비교 우위 1~2줄 (selection_logic과 논리·어휘 중복 금지)",
     )
     protein_dv_percent: int = Field(
         ...,
@@ -60,7 +60,7 @@ class AIAnalysisReport(BaseModel):
     )
     selection_logic: str = Field(
         ...,
-        description="확신의 픽 또는 반전 매력 픽으로 선정된 명쾌한 해설 1줄",
+        description="사용자가 선택한 3가지 조건(식감·템포·예산)과 연결되는 확신의 픽 또는 반전 매력 픽 선정 이유 1줄 (상단 why_this_spot의 핵심 표현 재사용 금지)",
     )
     dinner_pairing_guide: str = Field(
         ...,
