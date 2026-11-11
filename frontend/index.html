@@ -1451,7 +1451,8 @@
     }
 
     function buildLocalityStoreQuery(storeName) {
-      const cleanName = String(storeName || "").trim();
+      const cleanName = String(storeName || "").trim().replace(/\s+/g, " ");
+      if (!cleanName) return "";
       const rawAddr = String(state.address_name || "").trim();
       const primaryTokens = rawAddr.match(/[가-힣]+[0-9]*(?:읍|면|동)(?=\s|$)/g);
       const secondaryTokens = primaryTokens ? null : rawAddr.match(/[가-힣]+[0-9]*(?:리|가)(?=\s|$)/g);
@@ -1461,7 +1462,37 @@
           : secondaryTokens && secondaryTokens.length
             ? secondaryTokens[secondaryTokens.length - 1]
             : "";
-      return dongName ? `${dongName} ${cleanName}` : cleanName;
+      if (!dongName || cleanName.includes(dongName)) return cleanName;
+      const nonBranchSuffixes = [
+        "반점",
+        "과자점",
+        "정육점",
+        "문구점",
+        "복권방",
+        "음식점",
+        "전문점",
+        "편의점",
+        "할인점",
+        "백화점",
+        "면세점",
+      ];
+      const tokens = cleanName.split(" ");
+      const lastToken = tokens[tokens.length - 1] || "";
+      const isNonBranch = nonBranchSuffixes.some((sfx) => lastToken.endsWith(sfx));
+      if (tokens.length >= 2 && lastToken.endsWith("점") && !isNonBranch) {
+        return cleanName;
+      }
+      const dongStem = dongName.replace(/(?:읍|면|동|리|가)$/, "");
+      if (
+        !isNonBranch &&
+        cleanName.endsWith("점") &&
+        cleanName.length > 3 &&
+        ((dongStem.length >= 2 && cleanName.includes(`${dongStem}점`)) ||
+          /[가-힣0-9]+(?:역|대|호|본)점$/.test(cleanName))
+      ) {
+        return cleanName;
+      }
+      return `${dongName} ${cleanName}`;
     }
 
     function openCoupangEats(storeName, customDeepLink) {
@@ -1826,9 +1857,9 @@
           href="${safeNaverReviewUrl}"
           target="_blank"
           rel="noopener noreferrer"
-          class="px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0 whitespace-nowrap"
+          class="px-2.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-[11.5px] font-bold transition flex items-center gap-1 shrink-0 whitespace-nowrap"
         >
-          <span>🟢 네이버 영수증 찐리뷰</span>
+          <span>🟢 네이버 찐리뷰 바로가기</span>
         </a>
       `;
 

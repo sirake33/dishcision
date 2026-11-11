@@ -292,7 +292,40 @@ def build_delivery_deep_links(
     clean_name = clean_store_search_name(place_name)
     encoded_name = quote(clean_name)
     clean_dong = re.sub(r"\s+", " ", str(dong_name or "")).strip()
-    map_query_text = f"{clean_dong} {clean_name}".strip() if clean_dong else clean_name
+    tokens = clean_name.split()
+    last_token = tokens[-1] if tokens else ""
+    non_branch_words = (
+        "반점",
+        "과자점",
+        "정육점",
+        "문구점",
+        "복권방",
+        "음식점",
+        "전문점",
+        "할인점",
+        "편의점",
+        "면세점",
+        "백화점",
+    )
+    has_branch = (
+        (bool(clean_dong) and clean_dong in clean_name)
+        or (
+            len(tokens) >= 2
+            and last_token.endswith("점")
+            and not any(last_token.endswith(s) for s in non_branch_words)
+        )
+        or (
+            clean_name.endswith("점")
+            and len(clean_name) > 3
+            and not any(last_token.endswith(s) for s in non_branch_words)
+            and bool(re.search(r"[가-힣0-9]+(?:역|대|호|본)점$", clean_name))
+        )
+    )
+    map_query_text = (
+        clean_name
+        if (not clean_dong or has_branch)
+        else f"{clean_dong} {clean_name}".strip()
+    )
     query_str = quote(map_query_text)
 
     coupang_eats_url = f"coupangeats://search?keyword={encoded_name}"
