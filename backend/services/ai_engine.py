@@ -26,6 +26,7 @@ from backend.services.delivery_analyzer import (
     parse_price_int,
 )
 from backend.services.kakao_service import get_menu_emoji, resolve_naver_review_url
+from backend.services.weather_service import infer_weather_icon
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -44,8 +45,9 @@ SYSTEM_PROMPT = (
     "- **블로그 클리셰 전면 금지**: '겉바속촉', '조화롭게 어우러져', '어우러져', '조화를 이루어', '풍성한 식감', '선사합니다', '만족감을 전합니다', '입안 가득' 같은 상투적 AI·블로그 문구를 절대 쓰지 마세요.\n"
     "- `why_this_spot`('메뉴핏 추천 포인트'): 타 매장 비교('인근 분식류 대비', '~대비', '타 매장보다') 및 미실측 계량 비교를 전면 금지합니다. 토스/배민 스타일처럼 군더더기 없이 직관적이고, 센스 있는 미식가 친구가 \"이 메뉴는 이게 킥이야\" 하고 콕 집어주는 엣지 있는 1~2문장 펀치라인으로 음식 본연의 맛 포인트·식감·조리 킥을 생생하게 짚어주세요.\n"
     "- `selection_logic`('선정 이유'): 상단 `why_this_spot`의 핵심 표현을 재사용하지 말고, 사용자의 3-Tap 조건(템포/식감/예산)에 왜 이 메뉴가 딱 꽂히는지 역시 토스/배민 스타일의 감각적인 1줄 펀치라인으로 연결하세요.\n"
+    "- **실시간 날씨 자연 반영**: 현재 날씨·기온이 비/눈/쌀쌀함(12℃ 이하)/더위(26℃ 이상)처럼 뚜렷할 때는 메뉴 선별과 `selection_logic`에 빗길 동선·배달 편의·체감 온도 맥락을 상투적 인사말 없이 한 스푼 자연스럽게 녹이세요.\n"
     "- `dinner_pairing_guide`('저녁 식단 밸런스'): 매번 '두부 샐러드', '닭가슴살', '연두부' 같은 뻔한 특정 다이어트 메뉴를 추천하지 마세요. 대신 점심 메뉴의 나트륨·유분·탄수화물 비중에 따라 저녁에 줄일 성분(짠 국물·기름진 육류/튀김·정제 탄수화물 등)과 채울 성분(수분·칼륨·식이섬유·단백질 등)을 짚어주는 실질적 영양 조율 가이드 1~2문장(과거형 금지)을 작성하세요.\n"
-    "절대 금지: '인근 분식류 대비'·'~대비'·'타 매장보다' 같은 억지 비교 문구, 블로그 클리셰('겉바속촉', '조화롭게 어우러져', '풍성한 식감', '선사합니다'), 상투적 날씨 클리셰('쌀쌀한 날씨에 따뜻하게...', '도보 이동이 편합니다'), 가짜 퍼센트('%'), 미실측 계량 사칭, 따옴표(\"...\") 가짜 인용, '실사용 만족도' 같은 IT 리뷰 어휘, '두부 샐러드·닭가슴살' 같은 단조로운 다이어트 메뉴 처방."
+    "절대 금지: '인근 분식류 대비'·'~대비'·'타 매장보다' 같은 억지 비교 문구, 블로그 클리셰('겉바속촉', '조화롭게 어우러져', '풍성한 식감', '선사합니다'), 상투적 날씨 클리셰('쌀쌀한 날씨에 따뜻하게 드세요', '도보 이동이 편합니다', '비 오는 날엔 국물이죠'), 가짜 퍼센트('%'), 미실측 계량 사칭, 따옴표(\"...\") 가짜 인용, '실사용 만족도' 같은 IT 리뷰 어휘, '두부 샐러드·닭가슴살' 같은 단조로운 다이어트 메뉴 처방."
 )
 
 WALK_DISTANCE_DECAY_RULE = (
@@ -670,8 +672,18 @@ def _score_restaurant(
         if any(k in text for k in ["부대찌개", "김치찌개", "짬뽕", "마라탕", "떡볶이", "돈까스", "돈가스", "갈비", "삼겹"]):
             score -= 45
 
-    if weather_info.get("is_cold") and not (mode == "delivery" and is_meal_kit) and any(k in text for k in ["국밥", "소머리", "순대", "해장국", "찌개", "김찌로", "짬뽕", "우동", "라멘", "쌀국수", "마라탕", "본죽", "에그2000", "현대옥"]):
-        score += 15
+    is_cold = bool(weather_info.get("is_cold"))
+    is_rainy = bool(weather_info.get("is_rainy"))
+    is_snowy = bool(weather_info.get("is_snowy"))
+    is_hot = bool(weather_info.get("is_hot"))
+    if (is_cold or is_rainy or is_snowy) and not (mode == "delivery" and is_meal_kit):
+        if any(k in text for k in ["국밥", "소머리", "순대", "해장국", "찌개", "김찌로", "짬뽕", "우동", "라멘", "쌀국수", "마라탕", "본죽", "에그2000", "현대옥"]):
+            if is_cold:
+                score += 15
+            if is_rainy or is_snowy:
+                score += 15
+    if is_hot and any(k in text for k in ["포케", "샐러리아", "샐러드", "샌드위치", "써브웨이", "서브웨이", "프린샌드위치", "냉면", "밀면", "초밥", "소바", "모밀", "쌀국수"]):
+        score += 20
 
     if preference.budget_tier == "budget":
         if any(k in text for k in ["한솥", "봉구스", "행컵", "김밥천국", "이삭토스트", "에그2000", "프린샌드위치", "맘스터치", "밀플랜비", "미소야", "버거킹"]):
@@ -701,6 +713,11 @@ def _score_restaurant(
             score += 30 - round(((dist_m - 500) / 500) * 60)
         else:
             score -= 120
+        if is_rainy or is_snowy:
+            if dist_m <= 400:
+                score += 10
+            elif 650 < dist_m <= 1000:
+                score -= 15
     else:
         # 배달 모드는 거리 편향 없이 고품질·배달 적합성 우선 평가 (비배달 업종 및 비조리 밀키트 감점)
         if any(k in text for k in ["구내식당", "학생식당", "직원식당", "푸드코트", "뷔페", "참숯", "갈비", "삼겹"]):
@@ -751,8 +768,18 @@ def _score_refresh_restaurant(
         if any(k in text for k in ["부대찌개", "김치찌개", "짬뽕", "마라탕", "떡볶이", "돈까스", "돈가스", "갈비", "삼겹", "족발"]):
             score -= 50
 
-    if weather_info.get("is_cold") and not (mode == "delivery" and is_meal_kit) and any(k in text for k in ["국밥", "소머리", "순대", "해장국", "찌개", "김찌로", "짬뽕", "우동", "라멘", "쌀국수", "마라탕", "본죽", "에그2000", "파스타"]):
-        score += 10
+    is_cold = bool(weather_info.get("is_cold"))
+    is_rainy = bool(weather_info.get("is_rainy"))
+    is_snowy = bool(weather_info.get("is_snowy"))
+    is_hot = bool(weather_info.get("is_hot"))
+    if (is_cold or is_rainy or is_snowy) and not (mode == "delivery" and is_meal_kit):
+        if any(k in text for k in ["국밥", "소머리", "순대", "해장국", "찌개", "김찌로", "짬뽕", "우동", "라멘", "쌀국수", "마라탕", "본죽", "에그2000", "파스타"]):
+            if is_cold:
+                score += 10
+            if is_rainy or is_snowy:
+                score += 12
+    if is_hot and any(k in text for k in ["포케", "샐러리아", "샐러드", "샌드위치", "써브웨이", "서브웨이", "프린샌드위치", "냉면", "밀면", "초밥", "소바", "모밀", "쌀국수"]):
+        score += 20
 
     if preference.budget_tier == "budget":
         if any(k in text for k in ["한솥", "봉구스", "행컵", "김밥천국", "이삭토스트", "에그2000", "프린샌드위치", "맘스터치", "밀플랜비", "미소야", "버거킹", "본죽"]):
@@ -781,6 +808,11 @@ def _score_refresh_restaurant(
             score += 30 - round(((dist_m - 500) / 500) * 60)
         else:
             score -= 120
+        if is_rainy or is_snowy:
+            if dist_m <= 400:
+                score += 10
+            elif 650 < dist_m <= 1000:
+                score -= 15
     else:
         if any(k in text for k in ["구내식당", "학생식당", "직원식당", "푸드코트", "뷔페", "참숯", "갈비", "삼겹"]):
             score -= 120
@@ -950,6 +982,7 @@ def _build_fallback_report(
     *,
     is_refresh: bool = False,
     candidate_count: int = 12,
+    weather_info: Optional[Dict[str, Any]] = None,
 ) -> AIAnalysisReport:
     """실제 식당 업종·메뉴·탄단지 수치·3-Tap 조건을 기반으로 리뷰 마이닝·메뉴핏 추천 포인트·식곤증 지수·선정 논리 리포트를 생성합니다."""
     place_name = str(restaurant.get("place_name", "")).strip()
@@ -1055,6 +1088,49 @@ def _build_fallback_report(
             f"원하시던 {chosen_tex}의 묵직한 만족감부터 '{chosen_meal}' 템포, {estimated_price} 예산까지 고민 끝내고 바로 고르면 되는 확실한 매칭이에요."
         )
 
+    w_info = weather_info or {}
+    is_rainy = bool(w_info.get("is_rainy"))
+    is_snowy = bool(w_info.get("is_snowy"))
+    is_cold = bool(w_info.get("is_cold"))
+    is_hot = bool(w_info.get("is_hot"))
+    temp_label = str(w_info.get("temp") or "").strip()
+    mode = _normalize_mode(preference.delivery_mode)
+    is_warm_dish = preference.texture_temp == "soup" or any(
+        k in dish_text
+        for k in ("국밥", "찌개", "김찌로", "해장", "순대", "우동", "라멘", "쌀국수", "짬뽕", "마라탕", "본죽")
+    )
+
+    weather_tail = ""
+    if is_rainy or is_snowy:
+        precip_word = "눈" if is_snowy else "비"
+        if mode == "delivery":
+            weather_tail = f" {precip_word} 오는 날 외출 번거로움 없이 문 앞까지 편하게 받아 챙기기 좋아요."
+        elif is_warm_dish:
+            weather_tail = (
+                f" {precip_word}에 기온({temp_label})까지 내려간 날, 눅눅함 잊고 속을 따뜻하게 채워주기 딱이에요."
+                if temp_label
+                else f" {precip_word} 오는 날 눅눅한 기분을 달래며 속을 따뜻하게 채우기 좋아요."
+            )
+        else:
+            weather_tail = f" {precip_word} 오는 궂은 날씨에도 이동 부담 덜고 깔끔하게 챙기기 알맞아요."
+    elif is_cold and is_warm_dish:
+        weather_tail = (
+            f" {temp_label} 안팎의 쌀쌀한 공기 속에서 몸 안쪽까지 온기를 채워주기 좋아요."
+            if temp_label
+            else " 기온이 내려간 날 속을 따뜻하게 덥혀주기 알맞아요."
+        )
+    elif is_hot and any(
+        k in dish_text for k in ("포케", "샐러드", "샐러리아", "샌드위치", "써브웨이", "서브웨이", "프린샌드위치", "쌀국수", "냉면", "모밀", "소바")
+    ):
+        weather_tail = (
+            f" {temp_label}까지 오른 후텁지근한 날에도 답답함 없이 산뜻하게 들어가요."
+            if temp_label
+            else " 더운 날에도 무겁지 않고 산뜻하게 즐기기 좋아요."
+        )
+
+    if weather_tail and not _is_meal_kit_store(restaurant, menu_name):
+        selection_logic = f"{selection_logic}{weather_tail}"
+
     if _is_meal_kit_store(restaurant, menu_name) and MEAL_KIT_NOTICE not in selection_logic:
         selection_logic = f"{MEAL_KIT_NOTICE}. {selection_logic}"
 
@@ -1085,6 +1161,7 @@ def _sanitize_report(
     *,
     is_refresh: bool = False,
     candidate_count: int = 12,
+    weather_info: Optional[Dict[str, Any]] = None,
 ) -> AIAnalysisReport:
     fallback = _build_fallback_report(
         restaurant,
@@ -1094,6 +1171,7 @@ def _sanitize_report(
         preference,
         is_refresh=is_refresh,
         candidate_count=candidate_count,
+        weather_info=weather_info,
     )
     if raw_report is None:
         return fallback
@@ -1395,6 +1473,7 @@ def _materialize_group(
                 preference,
                 is_refresh=is_refresh,
                 candidate_count=len(restaurants),
+                weather_info=weather_info,
             )
         else:
             menu_val, price_val = _calibrate_min_order_exact_delivery_menu(
@@ -1413,6 +1492,7 @@ def _materialize_group(
                 preference,
                 is_refresh=is_refresh,
                 candidate_count=len(restaurants),
+                weather_info=weather_info,
             )
 
         is_meal_kit = _is_meal_kit_store(rest, menu_val)
@@ -1458,8 +1538,11 @@ def _post_validate_and_materialize(
         raise ValueError("실제 주변 식당 목록이 비어 있어 추천 결과를 생성할 수 없습니다.")
 
     mode = _normalize_mode(preference.delivery_mode)
-    weather_str = weather_info.get("weather", "쌀쌀한 흐림")
-    temp_str = weather_info.get("temp", "7℃")
+    weather_str = str(weather_info.get("weather") or "흐림").strip()
+    temp_str = str(weather_info.get("temp") or "10℃").strip()
+    weather_icon = (
+        str(weather_info.get("icon") or "").strip() or infer_weather_icon(weather_str)
+    )
 
     standard_ranked = _ranked_restaurant_indices(preference, weather_info, restaurants)
     used_indices: set[int] = set()
@@ -1503,6 +1586,7 @@ def _post_validate_and_materialize(
         address_name=address_name,
         current_weather=weather_str,
         temperature=temp_str,
+        weather_icon=weather_icon,
         delivery_mode=mode,
         standards=standards,
         refreshes=refreshes,
@@ -1572,6 +1656,7 @@ def _select_from_real_restaurants_fallback(
             preference,
             is_refresh=False,
             candidate_count=len(restaurants),
+            weather_info=weather_info,
         )
         raw_standards.append(
             AISelectionItem(
@@ -1599,6 +1684,7 @@ def _select_from_real_restaurants_fallback(
             preference,
             is_refresh=True,
             candidate_count=len(restaurants),
+            weather_info=weather_info,
         )
         raw_refreshes.append(
             AISelectionItem(
@@ -1683,14 +1769,32 @@ def generate_recommendations(
 
     indexed_list_text = "\n".join(indexed_lines)
 
+    weather_text = str(weather_info.get("weather") or "흐림").strip()
+    temp_text = str(weather_info.get("temp") or "10℃").strip()
+    weather_icon = (
+        str(weather_info.get("icon") or "").strip() or infer_weather_icon(weather_text)
+    )
+    weather_summary_parts = []
+    if weather_info.get("is_rainy"):
+        weather_summary_parts.append("비/강수 있음")
+    if weather_info.get("is_snowy"):
+        weather_summary_parts.append("눈/적설 있음")
+    if weather_info.get("is_cold"):
+        weather_summary_parts.append("쌀쌀한 기온(12℃ 이하)")
+    if weather_info.get("is_hot"):
+        weather_summary_parts.append("무더운 날씨(26℃ 이상)")
+    weather_condition_note = (
+        ", ".join(weather_summary_parts) if weather_summary_parts else "쾌적하고 무난한 기상"
+    )
+
     prompt = f"""아래 사용자의 현재 위치({address_name}) · 식사 방식(도보/배달) · 3-Tap 선택 · 실시간 날씨 · [주변 실제 식당 인덱스 목록]을 종합 추론하여,
 할루시네이션이 0%인 서로 다른 실제 매장 인덱스 총 5개(`standards` 3개 + `refreshes` 2개)와 탄단지 영양 수치(`NutritionFacts`)가 포함된 초정밀 리포트(`AISelectionResponse`)를 생성하세요.
 
-[현재 위치 및 기상 컨텍스트]
+[현재 위치 및 기상 컨텍스트 (Open-Meteo 실시간 연동)]
 - 한글 행정구역 주소: {address_name}
-- 날씨 상태: {weather_info.get("weather", "쌀쌀한 흐림")}
-- 현재 기온: {weather_info.get("temp", "7℃")}
-- 추위 여부(is_cold): {weather_info.get("is_cold", True)}
+- 현재 날씨: {weather_icon} {weather_text}
+- 현재 기온: {temp_text}
+- 기상 체감 요약: {weather_condition_note} (is_cold={bool(weather_info.get("is_cold", False))}, is_rainy={bool(weather_info.get("is_rainy", False))}, is_snowy={bool(weather_info.get("is_snowy", False))}, is_hot={bool(weather_info.get("is_hot", False))})
 
 [사용자 조건]
 0. 식사 방식: {delivery_desc}
@@ -1736,9 +1840,10 @@ def generate_recommendations(
    - 절대 금지:
      · **블로그·AI 상투어 전면 금지**: `"겉바속촉"`, `"조화롭게 어우러져"`, `"어우러져"`, `"조화를 이루어"`, `"풍성한 식감"`, `"선사합니다"`, `"만족감을 전합니다"`, `"입안 가득"`, `"환상적인"` 같은 뻔한 미식 블로그 클리셰를 한 단어도 쓰지 마세요.
      · **타 매장 억지 비교 전면 금지**: `"인근 분식류 대비"`, `"인근 백반 대비"`, `"동종 매장 대비"`, `"일반 ~ 대비"`, `"타 매장보다"`, `"~대비"` 비교 표현 일체 금지.
-     · **상투적 날씨/동선/가짜 수치/IT 어휘 금지**: "쌀쌀한 날씨에 어울립니다", "따뜻하게 드세요", "도보 이동이 편합니다", 행정동 주소 반복, 거리/시간 숫자 나열, 가짜 퍼센트(`%`), 미실측 중량 비교("몇 g 더 많음", "정량 비율 우수"), 따옴표("...") 인용, "실사용 만족도" 금지.
+     · **상투적 동선/날씨 멘트/가짜 수치/IT 어휘 금지**: "쌀쌀한 날씨에 따뜻하게 드세요", "비 오는 날엔 국물이죠", "도보 이동이 편합니다", 행정동 주소 반복, 거리/시간 숫자 나열, 가짜 퍼센트(`%`), 미실측 중량 비교("몇 g 더 많음", "정량 비율 우수"), 따옴표("...") 인용, "실사용 만족도" 금지.
      · **뻔한 다이어트 메뉴 강요 금지**: `dinner_pairing_guide`에서 매번 `"두부 샐러드"`, `"닭가슴살"`, `"연두부"` 같은 비현실적인 특정 다이어트 메뉴를 찍어주지 마세요.
-   - **역할 엄격 분리 (내용 및 어휘 중복 금지)**: `why_this_spot`은 오직 음식 본연의 맛 포인트·식감·조리 킥만 다루고, `selection_logic`은 상단 표현을 재사용하지 않고 오직 사용자의 3가지 선택 조건(`{texture_desc}`·`{meal_desc}`·`{budget_desc}`) 연결 이유만 다룹니다.
+   - **실시간 날씨 자연 반영**: 오늘 날씨가 비·눈·쌀쌀함(12℃ 이하)·무더움(26℃ 이상)일 때는 식당 순위 및 `selection_logic`에서 빗길 동선 부담·배달 편의·체감 온도를 상투적 인사말 없이 한 스푼 자연스럽게 녹이세요.
+   - **역할 엄격 분리 (내용 및 어휘 중복 금지)**: `why_this_spot`은 오직 음식 본연의 맛 포인트·식감·조리 킥만 다루고, `selection_logic`은 상단 표현을 재사용하지 않고 오직 사용자의 3가지 선택 조건(`{texture_desc}`·`{meal_desc}`·`{budget_desc}`)과 현재 날씨 컨텍스트 연결 이유만 다룹니다.
    - 반드시 아래 8개 필드를 **토스/배민 스타일의 감각적 펀치라인 + 실질적 영양 조율 가이드**로 채우세요:
      1) `review_keywords`: 해당 매장/메뉴에서 실제 방문자들이 주로 칭찬하는 핵심 매력 해시태그 정확히 3개 (예: `["#불향가득_직화", "#실한_고기양", "#혼밥편함"]`, `"겉바속촉"` 금지).
      2) `visitor_review_summary`: 따옴표("...") 인용구와 IT 제품 리뷰 어휘(`"실사용 만족도"` 등)를 전면 금지하고, `"~라는 평가가 지배적이며 재방문 만족도가 높습니다"`, `"~라는 점에서 인근 직장인과 학생들의 호평이 이어집니다"`처럼 자연스러운 외식 리뷰 어휘를 사용한 1줄 요약을 작성하세요 (라벨 없이 본문만 작성).
@@ -1753,9 +1858,10 @@ def generate_recommendations(
      5) `food_coma_status`: 방금 추정한 `nutrition`의 탄수화물·단백질 비율과 칼로리를 분석해 식후 혈당 스파이크 및 식곤증 위험도를 `"안전"`, `"적정"`, `"주의"` 중 하나로 정확히 판정.
      6) `food_coma_desc`: 탄단지 비율과 혈당 반응 근거로 오후 업무·학업 집중력이 몇 시까지 어떻게 유지되는지 과학적 1줄 예측 (예: `"고단백·복합당질 구성으로 급격한 혈당 스파이크 없이 오후 5시까지 집중력을 유지합니다."`).
      7) `selection_logic`:
-        - **상단 `why_this_spot` 핵심 표현 재사용 및 블로그 클리셰 금지**: 로봇처럼 딱딱한 보고서 어투(`"3-Tap 조건을 오차 없이 충족"`)를 버리고, **토스/배민 스타일의 센스 있는 1줄 펀치라인**으로 사용자의 3가지 조건(`{texture_desc}` 식감 / `{meal_desc}` 템포 / `{budget_desc}` 예산)을 연결하세요.
+        - **상단 `why_this_spot` 핵심 표현 재사용 및 블로그 클리셰 금지**: 로봇처럼 딱딱한 보고서 어투(`"3-Tap 조건을 오차 없이 충족"`)를 버리고, **토스/배민 스타일의 센스 있는 1줄 펀치라인**으로 사용자의 3가지 조건(`{texture_desc}` 식감 / `{meal_desc}` 템포 / `{budget_desc}` 예산)과 필요 시 현재 기상(`{weather_icon} {weather_text} {temp_text}`) 맥락을 자연스럽게 연결하세요.
         - `standards` (`[확신의 픽]`): 예) `"바쁜 일정 속 15분 컷 타이밍에 딱! 원하시던 빵/패티 만족감부터 알뜰 예산까지 군더더기 없이 맞아떨어지는 오늘의 정석 픽이에요."`
         - `refreshes` (`[반전 매력 픽]`): 예) `"매번 같은 면/국물 루틴이 살짝 심심한 날, 식사 템포와 예산선은 딱 지키면서 기분 전환만 톡 더해줄 반전 카드예요."`
+        - **기상 인지 예시**: 비·눈이 오거나 기온이 12℃ 이하로 쌀쌀할 때는 `"빗길 이동 부담을 줄여 가까우면서도 뜨끈한 한 그릇으로 컨디션을 챙기기 좋아요"` 또는 `"기온이 뚝 떨어진 날, 배달로 문 앞까지 편하게 받아 온기를 채우기 딱 맞아요"`처럼 자연스럽게 녹이세요.
         - 비조리 밀키트 매장일 경우 반드시 `selection_logic`에 `"⚠️ 냄비 조리가 필요한 밀키트 구성입니다"`를 명시하세요.
      8) `dinner_pairing_guide` (UI 표기: `🌙 이 메뉴를 선택할 시, 저녁 식단 밸런스`):
         - **절대 금지**: 과거형 단정("먹었으니", "드셨다면") 금지, `"두부 샐러드"`, `"닭가슴살"`, `"연두부"` 같은 뻔한 다이어트 메뉴 추천 전면 금지.

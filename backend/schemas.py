@@ -21,6 +21,18 @@ class UserPreferenceRequest(BaseModel):
         ...,
         description="'budget'(도보 8000원 이하), 'flexible'(도보 8000~13000원), 'min_order_exact'(배달 1인 최소주문 딱맞춤), 'generous_group'(배달 2인 이상 여유 세트)",
     )
+    current_weather: Optional[str] = Field(
+        default=None,
+        description="프론트엔드에서 조회한 실시간 현재 날씨 상태 (예: 맑음, 흐림, 비)",
+    )
+    temperature: Optional[str] = Field(
+        default=None,
+        description="프론트엔드에서 조회한 현재 기온 문자열 (예: 12℃)",
+    )
+    weather_icon: Optional[str] = Field(
+        default=None,
+        description="프론트엔드에서 조회한 현재 날씨 아이콘 이모지 (예: ☀️, ☁️, 🌧️)",
+    )
 
 
 class NutritionFacts(BaseModel):
@@ -145,6 +157,7 @@ class RecommendationResponse(BaseModel):
     address_name: str
     current_weather: str
     temperature: str
+    weather_icon: str = Field(default="🌤️", description="현재 날씨 아이콘 이모지")
     delivery_mode: str
     standards: List[RecommendationItem]
     refreshes: List[RecommendationItem]

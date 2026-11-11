@@ -15,7 +15,7 @@ from backend.services.kakao_service import (
     get_nearby_restaurants,
     search_location_candidates,
 )
-from backend.services.weather_service import get_current_weather
+from backend.services.weather_service import get_current_weather, merge_weather_context
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -90,7 +90,13 @@ def recommend_meals(request: UserPreferenceRequest) -> RecommendationResponse:
     실제 카카오 식당 데이터를 기반으로 탄단지 수치화 정석 3개 + 리프레시 2개 AI 다이닝 리포트를 반환합니다.
     """
     address_name = get_address_from_coords(request.latitude, request.longitude)
-    weather_info = get_current_weather(request.latitude, request.longitude)
+    weather_info = merge_weather_context(
+        request.latitude,
+        request.longitude,
+        client_weather=request.current_weather,
+        client_temp=request.temperature,
+        client_icon=request.weather_icon,
+    )
     try:
         restaurants = get_nearby_restaurants(
             request.latitude,
