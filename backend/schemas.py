@@ -117,6 +117,7 @@ class RecommendationItem(BaseModel):
     delivery_spec: Optional[DeliverySpec] = None
     coupang_eats_url: str
     kakao_map_url: str
+    naver_review_url: str
 
 
 class RecommendationResponse(BaseModel):

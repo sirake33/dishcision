@@ -262,15 +262,17 @@ def clean_store_search_name(place_name: str) -> str:
 
 def build_delivery_deep_links(place_name: str) -> Dict[str, str]:
     """
-    쿠팡이츠 모바일 앱 스킴(`coupangeats://`) 및 검색용 상호명 딥링크 정보를 생성합니다.
+    쿠팡이츠 모바일 앱 스킴(`coupangeats://`), 네이버 모바일 플레이스 영수증 리뷰 검색 URL 및 검색용 상호명을 생성합니다.
     """
     clean_name = clean_store_search_name(place_name)
     encoded_name = quote(clean_name)
 
     coupang_eats_url = f"coupangeats://search?keyword={encoded_name}"
+    naver_review_url = f"https://m.place.naver.com/restaurant/search?query={encoded_name}"
     return {
         "clean_store_name": clean_name,
         "coupang_eats_url": coupang_eats_url,
+        "naver_review_url": naver_review_url,
     }
 
 
