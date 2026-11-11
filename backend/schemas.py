@@ -128,7 +128,7 @@ class RecommendationItem(BaseModel):
     kakao_map_url: str
     naver_review_url: str = Field(
         ...,
-        description="네이버 플레이스 방문자 영수증 리뷰 직통 URL(m.place.naver.com/restaurant/{id}/review/visitor, 실패 시 네이버 모바일 검색 폴백)",
+        description="네이버 모바일 통합 검색 스마트플레이스·방문자 리뷰 직행 URL(https://m.search.naver.com/search.naver?query=...)",
     )
 
 

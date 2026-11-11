@@ -1462,7 +1462,17 @@
           : secondaryTokens && secondaryTokens.length
             ? secondaryTokens[secondaryTokens.length - 1]
             : "";
-      if (!dongName || cleanName.includes(dongName)) return cleanName;
+
+      const regionTokens = [];
+      for (const tok of rawAddr.match(/[가-힣]+[0-9]*(?:시|군|구|읍|면|동|리|가)(?=\s|$)/g) || []) {
+        regionTokens.push(tok);
+        const stem = tok.replace(/[0-9]*(?:시|군|구|읍|면|동|리|가)$/, "");
+        if (stem.length >= 2) regionTokens.push(stem);
+      }
+      const hasRegion =
+        (dongName && cleanName.includes(dongName)) ||
+        regionTokens.some((term) => new RegExp(`(?:^|\\s)${term}`).test(cleanName));
+
       const nonBranchSuffixes = [
         "반점",
         "과자점",
@@ -1479,17 +1489,16 @@
       const tokens = cleanName.split(" ");
       const lastToken = tokens[tokens.length - 1] || "";
       const isNonBranch = nonBranchSuffixes.some((sfx) => lastToken.endsWith(sfx));
-      if (tokens.length >= 2 && lastToken.endsWith("점") && !isNonBranch) {
-        return cleanName;
-      }
-      const dongStem = dongName.replace(/(?:읍|면|동|리|가)$/, "");
-      if (
-        !isNonBranch &&
-        cleanName.endsWith("점") &&
-        cleanName.length > 3 &&
-        ((dongStem.length >= 2 && cleanName.includes(`${dongStem}점`)) ||
-          /[가-힣0-9]+(?:역|대|호|본)점$/.test(cleanName))
-      ) {
+      const dongStem = dongName.replace(/[0-9]*(?:읍|면|동|리|가)$/, "");
+      const hasBranch =
+        (tokens.length >= 2 && lastToken.endsWith("점") && !isNonBranch) ||
+        (!isNonBranch &&
+          cleanName.endsWith("점") &&
+          cleanName.length > 3 &&
+          ((dongStem.length >= 2 && cleanName.includes(`${dongStem}점`)) ||
+            /(?:본점|직영점|[0-9]+호점|[가-힣0-9]+(?:역|대|호|본)점)$/.test(cleanName)));
+
+      if (!dongName || hasRegion || hasBranch) {
         return cleanName;
       }
       return `${dongName} ${cleanName}`;
@@ -1500,12 +1509,12 @@
       if (!cleanName) return;
 
       const encodedName = encodeURIComponent(cleanName);
-      const encodedMapQuery = encodeURIComponent(buildLocalityStoreQuery(cleanName));
+      const encodedSearchQuery = encodeURIComponent(`${buildLocalityStoreQuery(cleanName)} 리뷰`);
       const deepLink = customDeepLink || `coupangeats://search?keyword=${encodedName}`;
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       const webSearchUrl = isMobile
-        ? `https://m.map.naver.com/search2/search.naver?query=${encodedMapQuery}`
-        : `https://map.naver.com/p/search/${encodedMapQuery}`;
+        ? `https://m.search.naver.com/search.naver?query=${encodedSearchQuery}`
+        : `https://search.naver.com/search.naver?query=${encodedSearchQuery}`;
 
       lastAssistedStore = cleanName;
       const copyPromise = copyTextQuietly(cleanName);
@@ -1800,7 +1809,7 @@
       const safeKakaoUrl = escapeHtml(kakaoUrl);
       const naverReviewUrl =
         item.naver_review_url ||
-        `https://m.map.naver.com/search2/search.naver?query=${encodeURIComponent(buildLocalityStoreQuery(cleanStoreName))}`;
+        `https://m.search.naver.com/search.naver?query=${encodeURIComponent(`${buildLocalityStoreQuery(cleanStoreName)} 리뷰`)}`;
       const safeNaverReviewUrl = escapeHtml(naverReviewUrl);
 
       const spec = item.delivery_spec || null;
@@ -1859,7 +1868,7 @@
           rel="noopener noreferrer"
           class="px-2.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-[11.5px] font-bold transition flex items-center gap-1 shrink-0 whitespace-nowrap"
         >
-          <span>🟢 네이버 찐리뷰 바로가기</span>
+          <span>🟢 네이버 매장 정보 & 리뷰</span>
         </a>
       `;
 

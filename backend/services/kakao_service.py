@@ -1,4 +1,3 @@
-import json
 import logging
 import math
 import os
@@ -6,7 +5,6 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
-from urllib.request import Request, urlopen
 
 import requests
 from dotenv import load_dotenv
@@ -1053,9 +1051,7 @@ def get_menu_emoji(
     return full_match or "🍽️"
 
 
-NAVER_SEARCH_MORE_URL = "https://m.map.naver.com/search2/searchMore.naver"
-NAVER_MOBILE_MAP_SEARCH_URL = "https://m.map.naver.com/search2/search.naver"
-NAVER_PLACE_VISITOR_REVIEW_URL = "https://m.place.naver.com/restaurant/{place_id}/review/visitor"
+NAVER_MOBILE_SEARCH_URL = "https://m.search.naver.com/search.naver"
 
 _NON_BRANCH_DOT_SUFFIXES = (
     "반점",
@@ -1086,14 +1082,36 @@ def _extract_admin_dong(address_name: str = "") -> str:
     return ""
 
 
-def _has_branch_name(store_name: str, dong_name: str = "") -> bool:
-    """상호명에 '봉담점', '수원대점', '본점' 등 지점명이나 동네명이 이미 포함되어 있는지 판별합니다."""
+def _extract_region_stems(address_name: str = "") -> List[str]:
+    """행정구역 주소에서 시·군·구·읍·면·동·리 단위의 2글자 이상 지역 키워드를 추출합니다."""
+    text = re.sub(r"\s+", " ", str(address_name or "")).strip()
+    if not text:
+        return []
+    stems: List[str] = []
+    for tok in re.findall(r"[가-힣]+[0-9]*(?:시|군|구|읍|면|동|리|가)(?=\s|$)", text):
+        if tok not in stems:
+            stems.append(tok)
+        stem = re.sub(r"[0-9]*(?:시|군|구|읍|면|동|리|가)$", "", tok)
+        if len(stem) >= 2 and stem not in stems:
+            stems.append(stem)
+    return stems
+
+
+def _has_branch_or_region_name(
+    store_name: str, dong_name: str = "", address_name: str = ""
+) -> bool:
+    """상호명에 지점명('점', '본점' 등)이나 지역명이 이미 포함되어 있는지 판별합니다."""
     clean_store = re.sub(r"\s+", " ", str(store_name or "")).strip()
     if not clean_store:
         return False
 
     if dong_name and dong_name in clean_store:
         return True
+
+    region_source = f"{address_name} {dong_name}".strip()
+    for term in _extract_region_stems(region_source):
+        if re.search(rf"(?:^|\s){re.escape(term)}", clean_store):
+            return True
 
     tokens = clean_store.split()
     last_token = tokens[-1]
@@ -1105,94 +1123,37 @@ def _has_branch_name(store_name: str, dong_name: str = "") -> bool:
     if len(tokens) >= 2 and last_token.endswith("점") and not is_non_branch_word:
         return True
 
-    # 공백 없는 지점명 결합 (예: "이디야봉담점", "스타벅스강남역점")
-    dong_stem = re.sub(r"(?:읍|면|동|리|가)$", "", dong_name or "")
+    # 공백 없는 지점명 결합 (예: "이디야봉담점", "스타벅스본점", "카페직영점")
+    dong_stem = re.sub(r"[0-9]*(?:읍|면|동|리|가)$", "", dong_name or "")
     if not is_non_branch_word and clean_store.endswith("점") and len(clean_store) > 3:
         if dong_stem and len(dong_stem) >= 2 and f"{dong_stem}점" in clean_store:
             return True
-        if re.search(r"[가-힣0-9]+(?:역|대|호|본)점$", clean_store):
+        if re.search(r"(?:본점|직영점|[0-9]+호점|[가-힣0-9]+(?:역|대|호|본)점)$", clean_store):
             return True
 
     return False
 
 
 def _build_naver_search_query(store_name: str, address_name: str = "") -> str:
-    """지점명이 있으면 상호명만, 지점명이 없으면 동네 이름을 1회만 결합한 네이버 검색어를 생성합니다."""
+    """지점명·지역명 여부에 따라 '{clean_store_name} 리뷰' 또는 '{dong_name} {clean_store_name} 리뷰' 검색어를 생성합니다."""
     clean_store = re.sub(r"\s+", " ", str(store_name or "")).strip()
     if not clean_store:
         return ""
     dong_name = _extract_admin_dong(address_name)
-    if not dong_name or _has_branch_name(clean_store, dong_name=dong_name):
-        return clean_store
-    return f"{dong_name} {clean_store}"
-
-
-def _extract_naver_place_id(payload: Any) -> Optional[str]:
-    """네이버 searchMore.naver 응답 JSON에서 플레이스 고유 숫자 ID를 안전하게 추출합니다."""
-    if not isinstance(payload, dict):
-        return None
-
-    result_obj = payload.get("result")
-    candidate_lists: List[Any] = []
-    if isinstance(result_obj, dict):
-        for key in ("site", "place"):
-            section = result_obj.get(key)
-            if isinstance(section, dict) and isinstance(section.get("list"), list):
-                candidate_lists.append(section.get("list"))
-    if isinstance(payload.get("list"), list):
-        candidate_lists.append(payload.get("list"))
-
-    for item_list in candidate_lists:
-        for entry in item_list:
-            if not isinstance(entry, dict):
-                continue
-            raw_id = entry.get("id")
-            if raw_id is None:
-                continue
-            cleaned_id = re.sub(r"^[sS]+", "", str(raw_id).strip())
-            if re.fullmatch(r"\d+", cleaned_id):
-                return cleaned_id
-    return None
+    if not dong_name or _has_branch_or_region_name(
+        clean_store, dong_name=dong_name, address_name=address_name
+    ):
+        return f"{clean_store} 리뷰"
+    return f"{dong_name} {clean_store} 리뷰"
 
 
 def resolve_naver_review_url(store_name: str, address_name: str = "") -> str:
     """
-    네이버 지도 내부 검색 API(`searchMore.naver`)를 타임아웃 2초로 호출해 매장 고유 ID(`id`)를 추출하고,
-    추출 성공 시 방문자 영수증 리뷰 탭 직통 URL(`https://m.place.naver.com/restaurant/{id}/review/visitor`)을,
-    실패 시 안전 폴백 네이버 모바일 검색 URL을 반환합니다.
+    네이버 포털 모바일 검색(`m.search.naver.com`) URL을 생성합니다.
+    스마트플레이스 홈 카드(방문자 리뷰·별점·사진·메뉴)가 상단에 즉시 노출되도록
+    지점명/지역명 포함 여부에 따라 검색어를 최적화합니다.
     """
     query_text = _build_naver_search_query(store_name, address_name=address_name)
     if not query_text:
-        return "https://m.map.naver.com/"
-
-    encoded_query = quote(query_text)
-    fallback_url = f"{NAVER_MOBILE_MAP_SEARCH_URL}?query={encoded_query}"
-    lookup_url = (
-        f"{NAVER_SEARCH_MORE_URL}?query={encoded_query}"
-        "&sm=clk&style=v5&page=1&displayCount=1"
-    )
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
-            "Mobile/15E148 Safari/604.1"
-        ),
-        "Referer": "https://m.map.naver.com/",
-        "Accept": "application/json, text/plain, */*",
-    }
-
-    try:
-        req = Request(lookup_url, headers=headers)
-        with urlopen(req, timeout=2) as resp:
-            if getattr(resp, "status", 200) != 200:
-                return fallback_url
-            raw_body = resp.read().decode("utf-8", errors="ignore")
-        payload = json.loads(raw_body)
-        place_id = _extract_naver_place_id(payload)
-        if place_id:
-            return NAVER_PLACE_VISITOR_REVIEW_URL.format(place_id=place_id)
-    except Exception as exc:
-        logger.debug("네이버 플레이스 ID 조회 폴백 (%s): %s", query_text, exc)
-
-    return fallback_url
+        return "https://m.search.naver.com/"
+    return f"{NAVER_MOBILE_SEARCH_URL}?query={quote(query_text)}"

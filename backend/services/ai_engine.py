@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 import re
@@ -1093,33 +1092,6 @@ def _effective_naver_address(restaurant: Dict[str, Any], address_name: str = "")
     ).strip()
 
 
-def _resolve_naver_urls_batch(
-    selected_restaurants: List[Dict[str, Any]],
-    address_name: str = "",
-) -> List[str]:
-    """추천 카드 목록의 네이버 영수증 리뷰 직통 URL을 병렬(최대 2초 타임아웃)로 일괄 조회합니다."""
-    if not selected_restaurants:
-        return []
-
-    tasks = [
-        (
-            str(rest.get("place_name", "")).strip(),
-            _effective_naver_address(rest, address_name),
-        )
-        for rest in selected_restaurants
-    ]
-    if len(tasks) == 1:
-        return [resolve_naver_review_url(tasks[0][0], tasks[0][1])]
-
-    with ThreadPoolExecutor(max_workers=min(len(tasks), 5)) as executor:
-        return list(
-            executor.map(
-                lambda pair: resolve_naver_review_url(pair[0], pair[1]),
-                tasks,
-            )
-        )
-
-
 def _map_restaurant_to_item(
     rank: int,
     persona_type: str,
@@ -1133,9 +1105,8 @@ def _map_restaurant_to_item(
     is_meal_kit: Optional[bool] = None,
     emoji: Optional[str] = None,
     address_name: str = "",
-    naver_review_url: Optional[str] = None,
 ) -> RecommendationItem:
-    """백엔드 원본 카카오 식당 객체의 place_name, distance_m, 수학적 distance_display, 배달 스펙, 쿠팡이츠·네이버 플레이스 직통 리뷰 URL 및 푸드 이모지를 직접 바인딩합니다."""
+    """백엔드 원본 카카오 식당 객체의 place_name, distance_m, 수학적 distance_display, 배달 스펙, 쿠팡이츠·네이버 포털 검색 리뷰 URL 및 푸드 이모지를 직접 바인딩합니다."""
     place_name = str(restaurant.get("place_name", "")).strip()
     category_name = str(restaurant.get("category_name", "")).strip()
     dist_m = max(0, _parse_distance_m(restaurant.get("distance", "0"), default=0))
@@ -1143,7 +1114,7 @@ def _map_restaurant_to_item(
     distance_display = format_distance_text(dist_m, mode)
     dong_name = extract_dong_name(address_name, restaurant)
     links = build_delivery_deep_links(place_name, dong_name=dong_name)
-    resolved_naver_url = naver_review_url or resolve_naver_review_url(
+    resolved_naver_url = resolve_naver_review_url(
         place_name, _effective_naver_address(restaurant, address_name)
     )
     kakao_url = (
@@ -1303,19 +1274,11 @@ def _materialize_group(
                 restaurants[chosen_idx].get("place_name", ""),
             )
 
-    selected_restaurants = [
-        restaurants[slot_assignments[slot_idx] if slot_assignments[slot_idx] is not None else 0]
-        for slot_idx in range(target_count)
-    ]
-    resolved_naver_urls = _resolve_naver_urls_batch(
-        selected_restaurants, address_name=address_name
-    )
-
     items: List[RecommendationItem] = []
     for slot_idx in range(target_count):
         raw_item = sorted_raw[slot_idx] if slot_idx < len(sorted_raw) else None
-        rest = selected_restaurants[slot_idx]
-        naver_review_url_val = resolved_naver_urls[slot_idx]
+        chosen_idx = slot_assignments[slot_idx] if slot_assignments[slot_idx] is not None else 0
+        rest = restaurants[chosen_idx]
         fallback_inferred = _infer_menu_and_price(rest, preference, is_refresh=is_refresh)
 
         if slot_is_ai[slot_idx] and raw_item is not None:
@@ -1374,7 +1337,6 @@ def _materialize_group(
                 is_meal_kit=is_meal_kit,
                 emoji=emoji_val,
                 address_name=address_name,
-                naver_review_url=naver_review_url_val,
             )
         )
 

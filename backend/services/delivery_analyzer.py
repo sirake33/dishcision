@@ -287,11 +287,12 @@ def build_delivery_deep_links(
     place_name: str, dong_name: str = ""
 ) -> Dict[str, str]:
     """
-    쿠팡이츠 모바일 앱 스킴(`coupangeats://`), 네이버 모바일 지도([동네명 + 식당명]) 직통 리뷰 검색 URL 및 검색용 상호명을 생성합니다.
+    쿠팡이츠 모바일 앱 스킴(`coupangeats://`), 네이버 포털 모바일 검색(`m.search.naver.com`) 리뷰 URL 및 검색용 상호명을 생성합니다.
     """
     clean_name = clean_store_search_name(place_name)
     encoded_name = quote(clean_name)
     clean_dong = re.sub(r"\s+", " ", str(dong_name or "")).strip()
+    dong_stem = re.sub(r"[0-9]*(?:읍|면|동|리|가)$", "", clean_dong)
     tokens = clean_name.split()
     last_token = tokens[-1] if tokens else ""
     non_branch_words = (
@@ -307,8 +308,11 @@ def build_delivery_deep_links(
         "면세점",
         "백화점",
     )
+    has_region = bool(clean_dong and clean_dong in clean_name) or bool(
+        len(dong_stem) >= 2 and re.search(rf"(?:^|\s){re.escape(dong_stem)}", clean_name)
+    )
     has_branch = (
-        (bool(clean_dong) and clean_dong in clean_name)
+        has_region
         or (
             len(tokens) >= 2
             and last_token.endswith("점")
@@ -318,18 +322,18 @@ def build_delivery_deep_links(
             clean_name.endswith("점")
             and len(clean_name) > 3
             and not any(last_token.endswith(s) for s in non_branch_words)
-            and bool(re.search(r"[가-힣0-9]+(?:역|대|호|본)점$", clean_name))
+            and bool(re.search(r"(?:본점|직영점|[0-9]+호점|[가-힣0-9]+(?:역|대|호|본)점)$", clean_name))
         )
     )
-    map_query_text = (
-        clean_name
+    search_query_text = (
+        f"{clean_name} 리뷰"
         if (not clean_dong or has_branch)
-        else f"{clean_dong} {clean_name}".strip()
+        else f"{clean_dong} {clean_name} 리뷰".strip()
     )
-    query_str = quote(map_query_text)
+    query_str = quote(search_query_text)
 
     coupang_eats_url = f"coupangeats://search?keyword={encoded_name}"
-    naver_review_url = f"https://m.map.naver.com/search2/search.naver?query={query_str}"
+    naver_review_url = f"https://m.search.naver.com/search.naver?query={query_str}"
     return {
         "clean_store_name": clean_name,
         "coupang_eats_url": coupang_eats_url,
