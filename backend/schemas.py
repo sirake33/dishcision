@@ -45,7 +45,7 @@ class AIAnalysisReport(BaseModel):
     )
     why_this_spot: str = Field(
         ...,
-        description="임의의 퍼센트(%) 없이 인근 동종 매장 대비 조리 시간·단백질 밀도·휴대성·가성비 등 매장·음식 자체의 객관적 강점을 서술하는 비교 우위 1~2줄 (selection_logic과 논리·어휘 중복 금지)",
+        description="가짜 % 수치나 미실측 무게·정량 단정('몇 g 더 많음', '정량 비율 우수' 등) 없이 실제 방문자 리뷰 경향과 조리 특성을 바탕으로 사용자가 체감할 수 있는 실질적 만족 포인트 1~2줄 (selection_logic과 논리·어휘 중복 금지)",
     )
     protein_dv_percent: int = Field(
         ...,
