@@ -1648,7 +1648,7 @@
         if (btnEl) btnEl.setAttribute("aria-expanded", "true");
       } else {
         panelEl.classList.add("hidden");
-        textEl.textContent = "🔍 AI 추천 근거 리포트 보기 (리뷰·식곤증·비교우위) ▼";
+        textEl.textContent = "✨ MenuFit AI 심층 분석 리포트 보기 ▼";
         if (btnEl) btnEl.setAttribute("aria-expanded", "false");
       }
     }
@@ -1698,7 +1698,11 @@
             `<span class="bg-amber-50 text-amber-800 border border-amber-200/70 text-[11px] px-2 py-0.5 rounded-md font-semibold">${escapeHtml(k)}</span>`
         )
         .join("");
-      const safeReviewSummary = escapeHtml(report.visitor_review_summary || "");
+      const rawReviewSummary = String(report.visitor_review_summary || "")
+        .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+        .replace(/^방문자\s*리뷰\s*종합(?:\s*요약)?\s*[:：]\s*/u, "")
+        .trim();
+      const safeReviewSummary = escapeHtml(rawReviewSummary);
       const safeWhyThisSpot = escapeHtml(report.why_this_spot || "");
       const rawComaStatus = String(report.food_coma_status || "적정").trim();
       const safeComaStatus = escapeHtml(rawComaStatus);
@@ -1725,7 +1729,7 @@
       const safeKakaoUrl = escapeHtml(kakaoUrl);
       const naverReviewUrl =
         item.naver_review_url ||
-        `https://m.place.naver.com/restaurant/search?query=${encodeURIComponent(cleanStoreName)}`;
+        `https://m.search.naver.com/search.naver?query=${encodeURIComponent(cleanStoreName)}`;
       const safeNaverReviewUrl = escapeHtml(naverReviewUrl);
 
       const spec = item.delivery_spec || null;
@@ -1883,28 +1887,30 @@
             </p>
           </div>
 
-          <!-- 아코디언 토글 버튼 -->
+          <!-- 아코디언 토글 버튼 (MenuFit 시그니처 AI 리포트 강조) -->
           <button
             id="accordion-btn-${index}"
             type="button"
             onclick="toggleAccordion(${index})"
             aria-expanded="false"
             aria-controls="accordion-panel-${index}"
-            class="w-full py-1 bg-slate-50 hover:bg-slate-100 text-[11px] font-semibold text-slate-600 rounded-xl flex items-center justify-center gap-1 my-1 transition"
+            class="w-full py-2.5 bg-indigo-50/80 hover:bg-indigo-100/80 text-indigo-700 border border-indigo-200/70 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 my-2.5 transition shadow-sm"
           >
-            <span id="accordion-text-${index}">🔍 AI 추천 근거 리포트 보기 (리뷰·식곤증·비교우위) ▼</span>
+            <span id="accordion-text-${index}">✨ MenuFit AI 심층 분석 리포트 보기 ▼</span>
           </button>
 
-          <!-- 방문자 리뷰 마이닝 · 비교 우위 · 식곤증 방어 · 선정 이유 (기본 접힘 아코디언) -->
+          <!-- 방문자 리뷰 종합 요약 · 비교 우위 · 식곤증 방어 · 선정 이유 (기본 접힘 아코디언) -->
           <div id="accordion-panel-${index}" class="hidden space-y-2 mb-1.5 pt-0.5">
             <div class="text-[11px] text-slate-500 font-medium mb-2 flex items-center gap-1">
               <span>📊 데이터 출처: 네이버·카카오 실제 방문자 영수증 리뷰 + 식약처 외식 영양 DB</span>
             </div>
 
-            <!-- 1. 방문자 리뷰 마이닝 영역 -->
+            <!-- 1. 방문자 리뷰 종합 요약 영역 -->
             <div>
               <div class="flex flex-wrap gap-1.5 mb-1.5">${reviewKeywordsHtml}</div>
-              <p class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 italic">💬 "${safeReviewSummary}"</p>
+              <p class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 leading-relaxed">
+                💬 <span class="font-bold text-slate-700">방문자 리뷰 종합 요약</span>: ${safeReviewSummary}
+              </p>
             </div>
 
             <!-- 2. 3대 핵심 근거 박스 -->

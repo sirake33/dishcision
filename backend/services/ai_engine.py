@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
@@ -37,8 +38,8 @@ SYSTEM_PROMPT = (
     "반드시 목록 내 실제 식당의 서로 다른 정수 인덱스 `selected_index`만 총 5개 선택하세요:\n"
     "- `standards` (3개, rank 1~3, persona_type='standard'): 사용자 조건(식감/온도, 식사 템포, 예산)에 100% 충실한 확신의 픽 3곳\n"
     "- `refreshes` (2개, rank 1~2, persona_type='refresh'): 사용자의 식사 템포와 예산은 유지하되 카테고리를 색다르게 비튼 반전 매력 픽 2곳\n"
-    "식당 상호명이나 거리/이동시간 수치는 백엔드가 직접 매핑하므로 절대 지어내지 말고, 각 추천 메뉴의 정밀한 탄단지 영양 수치(`NutritionFacts`)와 팩트 기반 추천 근거 리포트(`AIAnalysisReport`: 방문자 리뷰 마이닝, 인근 비교 우위, 식곤증 방어 지수, 선정 논리)만 작성하세요.\n"
-    "절대 금지: '쌀쌀한 날씨에 따뜻하게...', '잘 비벼 드세요', '도보 이동이 편합니다' 같은 상투적 날씨 클리셰나 뻔한 식사 꿀팁을 절대 작성하지 마세요."
+    "식당 상호명이나 거리/이동시간 수치는 백엔드가 직접 매핑하므로 절대 지어내지 말고, 각 추천 메뉴의 정밀한 탄단지 영양 수치(`NutritionFacts`)와 팩트 기반 추천 근거 리포트(`AIAnalysisReport`: 방문자 리뷰 종합 요약, 인근 비교 우위, 식곤증 방어 지수, 선정 논리)만 작성하세요.\n"
+    "절대 금지: '쌀쌀한 날씨에 따뜻하게...', '잘 비벼 드세요', '도보 이동이 편합니다' 같은 상투적 날씨 클리셰, 실측 근거 없는 '(94%)'·'(88%)' 같은 가짜 퍼센트(%) 수치, 실제 인용처럼 꾸민 따옴표(\"...\") 리뷰를 절대 작성하지 마세요."
 )
 
 WALK_DISTANCE_DECAY_RULE = (
@@ -868,58 +869,58 @@ def _build_fallback_report(
 
     if any(k in dish_text for k in ("포케", "샐러드", "샐러리아")):
         keywords = ["#신선한_토핑조합", "#혈당스파이크_제로", "#식곤증_완벽방어"]
-        review_summary = "신선한 채소와 두툼한 단백질 토핑 비율이 알차 식후 속 더부룩함 없이 가볍게 완식할 수 있다는 호평이 주를 이룹니다."
+        review_summary = "신선한 채소와 단백질 토핑 비율이 알차 식후 더부룩함 없이 가볍게 완식할 수 있다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "클린식·샐러드 매장"
-        review_edge = "방문자 리뷰 '신선한 토핑 비율(91%)'과 '가벼운 포만감(89%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '신선한 채소·토핑 비율'과 '식후 가벼운 포만감'에 대한 칭찬이 가장 집중된 매장"
     elif any(k in dish_text for k in ("국밥", "소머리", "해장국", "순대", "설렁탕", "현대옥")):
         keywords = ["#진한육수_잡내제로", "#푸짐한_고기건더기", "#혼밥눈치_완전제로"]
-        review_summary = "고기 건더기가 넉넉하게 담겨 나오고 국물이 깔끔해 한 그릇만으로 든든함이 오래 간다는 재방문 후기가 많습니다."
+        review_summary = "고기 건더기가 넉넉하고 국물이 깔끔해 한 그릇만으로 든든함이 오래 간다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "국밥·탕류 매장"
-        review_edge = "방문자 리뷰 '푸짐한 고기 건더기(89%)'와 '깔끔한 육수(91%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '푸짐한 고기 건더기'와 '잡내 없는 깔끔한 육수'에 대한 칭찬이 가장 집중된 매장"
     elif any(k in dish_text for k in ("김치찌개", "김찌로", "순두부", "부대찌개", "찌개", "제육", "두루치기")):
         keywords = ["#불향가득_진한국물", "#밥도둑_고기양", "#빠른회전_점심맛집"]
-        review_summary = "양념이 과하게 달지 않고 고기와 건더기가 실하게 들어가 점심 한 끼 만족도가 높다는 평이 이어집니다."
+        review_summary = "양념이 과하게 달지 않고 고기와 건더기가 실하게 들어가 점심 한 끼 만족도가 높다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "한식·찌개 매장"
-        review_edge = "방문자 리뷰 '밥도둑 직화 양념(88%)'과 '빠른 조리 속도(92%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '밥도둑 직화 양념'과 '넉넉한 고기 반찬 양'에 대한 칭찬이 가장 집중된 매장"
     elif any(k in dish_text for k in ("버거", "와퍼", "싸이", "롯데리아", "맥도날드", "프랭크", "노브랜드")) and "밥버거" not in dish_text:
         keywords = ["#겉바속촉_패티육즙", "#단품보다_콤보이득", "#대기적은_패스트픽"]
-        review_summary = "주문 즉시 갓 구운 패티와 빵 식감이 살아 있어 15분 내 빠르게 먹어도 한 끼 만족감이 확실하다는 평이 많습니다."
+        review_summary = "주문 즉시 갓 구운 패티와 빵 식감이 살아 있어 빠르게 먹어도 한 끼 만족감이 확실하다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "버거·패스트푸드 매장"
-        review_edge = "방문자 리뷰 '두툼한 패티 육즙(88%)'과 '빠른 조리 회전율(93%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '두툼한 패티 육즙'과 '빠른 조리 회전율'에 대한 칭찬이 가장 집중된 매장"
     elif any(k in dish_text for k in ("토스트", "이삭", "에그", "샌드위치", "써브웨이", "서브웨이", "파리바게뜨")):
         keywords = ["#폭신한_에그스크램블", "#손에안묻는_깔끔함", "#부담없는_균형식"]
-        review_summary = "속재료가 넉넉하게 채워져 한 손으로 깔끔하게 먹기 좋고 소화 부담이 적다는 호평이 많습니다."
+        review_summary = "속재료가 넉넉하게 채워져 한 손으로 깔끔하게 먹기 좋고 소화 부담이 적다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "샌드위치·브런치 매장"
-        review_edge = "방문자 리뷰 '알찬 속재료 구성(90%)'과 '간편한 섭취 편의성(94%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '알찬 속재료 구성'과 '깔끔한 원핸드 섭취 편의성'에 대한 칭찬이 가장 집중된 매장"
     elif any(k in dish_text for k in ("돈까스", "돈가스", "카츠", "상상카츠", "최고당", "미소야", "덮밥", "일식")):
         keywords = ["#두툼한_등심육즙", "#느끼함없는_바삭함", "#알찬정식_포만감"]
-        review_summary = "튀김옷이 두껍지 않고 살코기가 도톰하게 씹혀 마지막 한 점까지 물리지 않고 든든하다는 리뷰가 돋보입니다."
+        review_summary = "튀김옷이 두껍지 않고 살코기가 도톰하게 씹혀 마지막 한 점까지 물리지 않고 든든하다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "돈카츠·일식 매장"
-        review_edge = "방문자 리뷰 '도톰한 등심 육즙(89%)'과 '바삭한 식감 유지력(91%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '도톰한 등심 육즙'과 '마지막까지 유지되는 바삭한 식감'에 대한 칭찬이 가장 집중된 매장"
     elif any(k in dish_text for k in ("마라탕", "탕화쿵푸", "라홍방", "짬뽕", "챠이챠이", "우동", "라멘", "쌀국수", "칼국수")):
         keywords = ["#깊은육수_감칠맛", "#채소토핑_식감최고", "#물리지않는_한그릇"]
-        review_summary = "면과 육수가 따로 놀지 않고 토핑 식감이 넉넉해 일반 밥집 대신 기분 전환용 한 끼로 손꼽힌다는 평입니다."
+        review_summary = "면과 육수가 따로 놀지 않고 토핑 식감이 넉넉해 기분 전환용 한 끼로 손꼽힌다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "면·중식/아시안 매장"
-        review_edge = "방문자 리뷰 '진한 육수 감칠맛(87%)'과 '넉넉한 토핑 양(90%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '진한 육수 감칠맛'과 '풍성한 채소·토핑 구성'에 대한 칭찬이 가장 집중된 매장"
     elif any(k in dish_text for k in ("한솥", "도시락", "봉구스", "밥버거", "행컵", "밀플랜비", "부리또", "브리또", "김밥")):
         keywords = ["#극강_만원가성비", "#초고속_조리완성", "#알찬토핑_한그릇"]
-        review_summary = "가격 대비 토핑과 밥 양이 알차 시간과 비용을 모두 아껴주는 실속 점심 성지라는 평가가 지배적입니다."
+        review_summary = "가격 대비 토핑·밥 양이 알차고 포장 위생 및 제공 속도가 뛰어나다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "도시락·간편식 매장"
-        review_edge = "방문자 리뷰 '압도적 1만 원 가성비(93%)'와 '빠른 조리 속도(95%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '포장 위생 및 보온성'과 '만원 예산 대비 알찬 메뉴 구성'에 대한 칭찬이 가장 집중된 매장"
     elif any(k in dish_text for k in ("죽", "본죽")):
         keywords = ["#속편한_부드러움", "#알찬_전복소고기", "#깔끔한_밑반찬"]
-        review_summary = "건더기가 바닥까지 실하게 들어가 있고 간이 자극적이지 않아 컨디션이 무거울 때 최고라는 후기가 많습니다."
+        review_summary = "건더기가 바닥까지 실하게 들어가 있고 간이 자극적이지 않아 속이 편하다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "죽·클린 한식 매장"
-        review_edge = "방문자 리뷰 '알찬 건더기 비율(90%)'과 '속 편한 소화감(92%)' 1위 매장"
+        review_edge = "방문자 리뷰에서 '실한 건더기 비율'과 '자극 없이 깔끔한 소화감'에 대한 칭찬이 가장 집중된 매장"
     else:
         keywords = ["#재료신선_정갈함", "#재방문율_상위권", "#안정적_간밸런스"]
-        review_summary = "음식이 전반적으로 정갈하고 양과 간의 균형이 안정적이라 믿고 방문하는 고정 단골이 많은 곳입니다."
+        review_summary = "음식이 전반적으로 정갈하고 양과 간의 균형이 안정적이라 믿고 재방문하게 된다는 평가가 지배적이며 실사용 만족도가 높습니다."
         peer_label = "인근 동종 매장"
-        review_edge = "방문자 리뷰 '재료 신선도(88%)'와 '일정한 맛 밸런스(90%)' 상위권 매장"
+        review_edge = "방문자 리뷰에서 '재료 신선도'와 '일정한 맛 밸런스'에 대한 호평이 꾸준히 집중되는 매장"
 
     radius_scope = "반경 3.5km 배달 권역 내" if mode == "delivery" else "반경 1km 내"
     why_this_spot = (
-        f"{radius_scope} {peer_label}({total_peers}곳 비교) 중 {estimated_price} 기준(단백질 {nutrition.protein_g}g) {review_edge}입니다."
+        f"{radius_scope} 동종 {peer_label} 후보({total_peers}곳 비교) 중 {estimated_price} 기준(단백질 {nutrition.protein_g}g) {review_edge}입니다."
     )
 
     coma_status, coma_desc = _diagnose_food_coma(nutrition, preference)
@@ -984,11 +985,18 @@ def _sanitize_report(
         getattr(raw_report, "review_keywords", None),
         fallback.review_keywords,
     )
-    summary = str(getattr(raw_report, "visitor_review_summary", "") or "").strip().strip('"\'“”')
-    if not summary:
+    summary = str(getattr(raw_report, "visitor_review_summary", "") or "").strip()
+    summary = re.sub(r'^["\'“”‘’]+|["\'“”‘’]+$', "", summary).strip()
+    summary = re.sub(r"^방문자\s*리뷰\s*종합(?:\s*요약)?\s*[:：]\s*", "", summary).strip()
+    summary = re.sub(r'^["\'“”‘’]+|["\'“”‘’]+$', "", summary).strip()
+    summary = re.sub(r"\s*\(\s*(?:약\s*)?\d+(?:\.\d+)?\s*%\s*\)", "", summary).strip()
+    if not summary or re.search(r"\d+(?:\.\d+)?\s*%", summary):
         summary = fallback.visitor_review_summary
 
-    why_spot = str(getattr(raw_report, "why_this_spot", "") or "").strip() or fallback.why_this_spot
+    why_spot = str(getattr(raw_report, "why_this_spot", "") or "").strip()
+    why_spot = re.sub(r"\s*\(\s*(?:약\s*)?\d+(?:\.\d+)?\s*%\s*\)", "", why_spot).strip()
+    if not why_spot or re.search(r"\d+(?:\.\d+)?\s*%", why_spot):
+        why_spot = fallback.why_this_spot
     coma_status = _normalize_food_coma_status(
         getattr(raw_report, "food_coma_status", ""), fallback.food_coma_status
     )
@@ -1542,12 +1550,12 @@ def generate_recommendations(
    - 선택한 `recommended_menu`(세트·다인 구성 포함 총량 기준)의 현실적인 `calories`(kcal 정수), `carbs_g`(탄수화물 g 정수), `protein_g`(단백질 g 정수), `fat_g`(지방 g 정수)를 추정하세요 (`calories`는 대략 carbs*4 + protein*4 + fat*9와 일치해야 합니다).
    - `calories_per_person`: `generous_group`(2인 이상 다인 세트)일 때는 `round(calories / 2)` 정수를 기입하고, 1인 단품/콤보일 때는 `null`을 반환하세요.
    - `nutrition_highlight`: 선택한 식감/모드 기준 탄단지 균형 분석을 핵심 1줄로 작성하세요.
-6. `report` (`AIAnalysisReport`) 초정밀 추천 근거 리포트 작성 규칙 (상투적 날씨/꿀팁/동선 클리셰 전면 폐기):
-   - 금지: "쌀쌀한 날씨에 어울립니다", "따뜻하게 드세요", "맛있게 비벼 드세요", "도보 이동이 편합니다", "(경기도 화성시...)" 행정동 주소 반복, 거리/시간 숫자 나열.
-   - 반드시 아래 6개 필드를 날카로운 **팩트·데이터·비교 우위** 중심으로 채우세요:
-     1) `review_keywords`: 해당 매장/메뉴에서 실제 방문자들이 가장 많이 칭찬하는 핵심 매력 해시태그 정확히 3개 (예: `["#불향가득_직화", "#푸짐한_고기양", "#혼밥편함"]`).
-     2) `visitor_review_summary`: 실제 방문자들이 공통적으로 남기는 맛·양·가성비 중심 대표 1줄 평 (바깥 큰따옴표 없이 순수 문장 1줄).
-     3) `why_this_spot`: 단순 줄글 대신 위 후보 목록(총 {len(candidate_restaurants)}곳)의 인근 동종 매장들과 직접 비교한 우위에 실제 방문자 리뷰의 핵심 강점과 키워드 언급률(%)을 결합하여 신뢰도를 높인 팩트 1~2줄로 서술 (예: `"반경 1km 내 동종 매장 중 방문자 리뷰 '고기 육즙 만족도(88%)'와 '빠른 조리 속도(92%)' 1위 매장"`).
+6. `report` (`AIAnalysisReport`) 초정밀 추천 근거 리포트 작성 규칙 (상투적 날씨/꿀팁/동선 클리셰 및 거짓 수치·인용구 전면 폐기):
+   - 금지: "쌀쌀한 날씨에 어울립니다", "따뜻하게 드세요", "맛있게 비벼 드세요", "도보 이동이 편합니다", "(경기도 화성시...)" 행정동 주소 반복, 거리/시간 숫자 나열, 증명 불가능한 가짜 퍼센트 숫자('(94%)', '(89%)' 등 어떠한 % 수치도 절대 생성 금지), 실제 방문자 인용처럼 꾸민 따옴표("...") 문장.
+   - 반드시 아래 6개 필드를 정직하고 날카로운 **팩트·실데이터·비교 우위** 중심으로 채우세요:
+     1) `review_keywords`: 해당 매장/메뉴에서 실제 방문자들이 주로 칭찬하는 핵심 매력 해시태그 정확히 3개 (예: `["#불향가득_직화", "#푸짐한_고기양", "#혼밥편함"]`).
+     2) `visitor_review_summary`: 따옴표("...") 인용구 없이, 방문자 평가를 종합한 AI 총평임을 알 수 있도록 `~라는 평가가 지배적이며 실사용 만족도가 높습니다` 형태로 정직한 1줄 요약을 작성하세요 (단, 문두의 `"방문자 리뷰 종합 요약:"` 라벨은 UI에서 붙이므로 라벨 없이 본문만 작성).
+     3) `why_this_spot`: `(94%)`, `(89%)` 같은 가짜 퍼센트 숫자를 절대 지어내지 말고, 위 후보 목록(총 {len(candidate_restaurants)}곳)의 인근 동종 매장들과 비교했을 때 이 매장이 돋보이는 이유를 실제 팩트 기반 서술형으로 정직하게 1~2줄 작성 (예: `"반경 1km 내 동종 매장 중 방문자 리뷰에서 '포장 위생 및 보온성'과 '고기 반찬의 퀄리티'에 대한 칭찬이 가장 집중된 매장"`).
      4) `food_coma_status`: 방금 추정한 `nutrition`의 탄수화물·단백질 비율과 칼로리를 분석해 식후 혈당 스파이크 및 식곤증 위험도를 `"안전"`, `"적정"`, `"주의"` 중 하나로 정확히 판정.
      5) `food_coma_desc`: 탄단지 비율과 혈당 반응 근거로 오후 업무·학업 집중력이 몇 시까지 어떻게 유지되는지 과학적 1줄 예측 (예: `"고단백·복합당질 구성으로 급격한 혈당 스파이크 없이 오후 5시까지 집중력을 유지합니다."`).
      6) `selection_logic`:

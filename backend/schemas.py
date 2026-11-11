@@ -37,14 +37,15 @@ class NutritionFacts(BaseModel):
 class AIAnalysisReport(BaseModel):
     review_keywords: List[str] = Field(
         ...,
-        description="방문자 실제 칭찬 키워드 해시태그 3개 (예: ['#불향가득_직화', '#푸짐한_고기양', '#혼밥편함'])",
+        description="방문자 칭찬 키워드 해시태그 3개 (예: ['#불향가득_직화', '#푸짐한_고기양', '#혼밥편함'])",
     )
     visitor_review_summary: str = Field(
-        ..., description="방문자들의 대표적인 1줄 요약평"
+        ...,
+        description="따옴표 인용 없이 방문자 평가를 AI가 종합해 정리한 객관적 1줄 요약 (예: '~라는 평가가 지배적이며 실사용 만족도가 높습니다.')",
     )
     why_this_spot: str = Field(
         ...,
-        description="주변 인근 동종 식당들과의 비교 우위 팩트 1~2줄",
+        description="임의의 퍼센트(%) 숫자 없이 주변 인근 동종 식당들과 비교한 팩트 중심 서술형 우위 1~2줄",
     )
     food_coma_status: str = Field(
         ..., description="탄단지 비율 기반 식곤증 위험도 진단 ('안전', '적정', '주의')"
@@ -117,7 +118,9 @@ class RecommendationItem(BaseModel):
     delivery_spec: Optional[DeliverySpec] = None
     coupang_eats_url: str
     kakao_map_url: str
-    naver_review_url: str
+    naver_review_url: str = Field(
+        ..., description="네이버 모바일 통합 검색(플레이스 카드 연동) URL"
+    )
 
 
 class RecommendationResponse(BaseModel):
