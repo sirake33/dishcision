@@ -22,6 +22,7 @@ from backend.schemas import (
 from backend.services.delivery_analyzer import (
     analyze_delivery_spec,
     build_delivery_deep_links,
+    extract_dong_name,
     parse_price_int,
 )
 from backend.services.kakao_service import get_menu_emoji
@@ -1091,14 +1092,16 @@ def _map_restaurant_to_item(
     report: AIAnalysisReport,
     is_meal_kit: Optional[bool] = None,
     emoji: Optional[str] = None,
+    address_name: str = "",
 ) -> RecommendationItem:
-    """백엔드 원본 카카오 식당 객체의 place_name, distance_m, 수학적 distance_display, 배달 스펙, 쿠팡이츠 딥링크 및 푸드 이모지를 직접 바인딩합니다."""
+    """백엔드 원본 카카오 식당 객체의 place_name, distance_m, 수학적 distance_display, 배달 스펙, 쿠팡이츠·네이버 지도 딥링크 및 푸드 이모지를 직접 바인딩합니다."""
     place_name = str(restaurant.get("place_name", "")).strip()
     category_name = str(restaurant.get("category_name", "")).strip()
     dist_m = max(0, _parse_distance_m(restaurant.get("distance", "0"), default=0))
     mode = _normalize_mode(delivery_mode)
     distance_display = format_distance_text(dist_m, mode)
-    links = build_delivery_deep_links(place_name)
+    dong_name = extract_dong_name(address_name, restaurant)
+    links = build_delivery_deep_links(place_name, dong_name=dong_name)
     kakao_url = (
         str(restaurant.get("place_url", "")).strip()
         or f"https://map.kakao.com/link/search/{quote(place_name)}"
@@ -1122,6 +1125,7 @@ def _map_restaurant_to_item(
             recommended_menu,
             estimated_price,
             distance_m=dist_m,
+            address_name=address_name,
         )
         delivery_spec_obj = DeliverySpec(
             min_order_price=spec["min_order_price"],
@@ -1196,6 +1200,7 @@ def _materialize_group(
     preference: UserPreferenceRequest,
     weather_info: Dict[str, Any],
     restaurants: List[Dict[str, Any]],
+    address_name: str = "",
 ) -> List[RecommendationItem]:
     """정석(3개) 또는 리프레시(2개) 후보군을 Post-Validation 후 RecommendationItem 리스트로 구체화합니다."""
     mode = _normalize_mode(preference.delivery_mode)
@@ -1316,6 +1321,7 @@ def _materialize_group(
                 report=report_val,
                 is_meal_kit=is_meal_kit,
                 emoji=emoji_val,
+                address_name=address_name,
             )
         )
 
@@ -1355,6 +1361,7 @@ def _post_validate_and_materialize(
         preference=preference,
         weather_info=weather_info,
         restaurants=restaurants,
+        address_name=address_name,
     )
 
     standard_categories = {
@@ -1376,6 +1383,7 @@ def _post_validate_and_materialize(
         preference=preference,
         weather_info=weather_info,
         restaurants=restaurants,
+        address_name=address_name,
     )
 
     return RecommendationResponse(

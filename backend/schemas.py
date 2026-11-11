@@ -127,7 +127,7 @@ class RecommendationItem(BaseModel):
     coupang_eats_url: str
     kakao_map_url: str
     naver_review_url: str = Field(
-        ..., description="네이버 모바일 통합 검색(플레이스 카드 연동) URL"
+        ..., description="네이버 모바일 지도([동네명 + 식당명]) 방문자 리뷰·평점 직통 URL"
     )
 
 

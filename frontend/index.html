@@ -1450,16 +1450,31 @@
       }
     }
 
+    function buildLocalityStoreQuery(storeName) {
+      const cleanName = String(storeName || "").trim();
+      const rawAddr = String(state.address_name || "").trim();
+      const primaryTokens = rawAddr.match(/[가-힣]+[0-9]*(?:읍|면|동)(?=\s|$)/g);
+      const secondaryTokens = primaryTokens ? null : rawAddr.match(/[가-힣]+[0-9]*(?:리|가)(?=\s|$)/g);
+      const dongName =
+        primaryTokens && primaryTokens.length
+          ? primaryTokens[0]
+          : secondaryTokens && secondaryTokens.length
+            ? secondaryTokens[secondaryTokens.length - 1]
+            : "";
+      return dongName ? `${dongName} ${cleanName}` : cleanName;
+    }
+
     function openCoupangEats(storeName, customDeepLink) {
       const cleanName = String(storeName || "").trim();
       if (!cleanName) return;
 
       const encodedName = encodeURIComponent(cleanName);
+      const encodedMapQuery = encodeURIComponent(buildLocalityStoreQuery(cleanName));
       const deepLink = customDeepLink || `coupangeats://search?keyword=${encodedName}`;
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       const webSearchUrl = isMobile
-        ? `https://m.map.naver.com/search2/search.naver?query=${encodedName}`
-        : `https://map.naver.com/p/search/${encodedName}`;
+        ? `https://m.map.naver.com/search2/search.naver?query=${encodedMapQuery}`
+        : `https://map.naver.com/p/search/${encodedMapQuery}`;
 
       lastAssistedStore = cleanName;
       const copyPromise = copyTextQuietly(cleanName);
@@ -1706,18 +1721,12 @@
       const safeWhyThisSpot = escapeHtml(report.why_this_spot || "");
       const rawComaStatus = String(report.food_coma_status || "적정").trim();
       const safeComaStatus = escapeHtml(rawComaStatus);
-      const comaStatusColor =
+      const comaStatusBadgeStyle =
         rawComaStatus === "안전"
-          ? "text-emerald-600"
+          ? "text-emerald-600 bg-emerald-100/70"
           : rawComaStatus === "주의"
-            ? "text-rose-600"
-            : "text-amber-600";
-      const comaBoxStyle =
-        rawComaStatus === "안전"
-          ? "bg-emerald-50/75 border-emerald-100"
-          : rawComaStatus === "주의"
-            ? "bg-rose-50/75 border-rose-100"
-            : "bg-amber-50/75 border-amber-100";
+            ? "text-rose-600 bg-rose-100/80"
+            : "text-amber-700 bg-amber-200/70";
       const safeComaDesc = escapeHtml(report.food_coma_desc || "");
       const safeSelectionLogic = escapeHtml(report.selection_logic || "");
       const rawProteinDv = Number(report.protein_dv_percent);
@@ -1760,7 +1769,7 @@
       const safeKakaoUrl = escapeHtml(kakaoUrl);
       const naverReviewUrl =
         item.naver_review_url ||
-        `https://m.search.naver.com/search.naver?query=${encodeURIComponent(cleanStoreName)}`;
+        `https://m.map.naver.com/search2/search.naver?query=${encodeURIComponent(buildLocalityStoreQuery(cleanStoreName))}`;
       const safeNaverReviewUrl = escapeHtml(naverReviewUrl);
 
       const spec = item.delivery_spec || null;
@@ -1958,14 +1967,14 @@
                 <p class="text-xs text-slate-700 leading-relaxed font-medium">${safeWhyThisSpot}</p>
               </div>
 
-              <div class="p-2.5 rounded-xl border ${comaBoxStyle}">
-                <div class="text-[11px] font-extrabold text-slate-900 mb-0.5">
-                  ⚡ 식곤증 방어 지수
-                </div>
-                <p class="text-xs leading-relaxed">
-                  <span class="font-bold ${comaStatusColor}">${safeComaStatus}</span>
-                  <span class="text-slate-400 mx-0.5">·</span>
-                  <span class="text-xs text-slate-600">${safeComaDesc}</span>
+              <div class="p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-amber-950 text-xs my-2">
+                <p class="font-bold text-amber-900 mb-1 flex items-center gap-1">
+                  <span>⚡ 식곤증 방어 지수</span>
+                </p>
+                <p class="leading-relaxed">
+                  <span class="font-bold ${comaStatusBadgeStyle} px-1.5 py-0.5 rounded mr-1">${safeComaStatus}</span>
+                  <span>·</span>
+                  <span class="text-slate-700 font-medium ml-1">${safeComaDesc}</span>
                 </p>
               </div>
 

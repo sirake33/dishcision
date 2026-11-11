@@ -260,15 +260,43 @@ def clean_store_search_name(place_name: str) -> str:
     return cleaned
 
 
-def build_delivery_deep_links(place_name: str) -> Dict[str, str]:
+def extract_dong_name(
+    address_name: str = "", restaurant: Optional[Dict[str, Any]] = None
+) -> str:
+    """역지오코딩 주소 또는 식당 도로명·지번 주소에서 행정동/읍/면 명칭(예: 봉담읍, 안양동)을 추출합니다."""
+    candidates: List[str] = []
+    if address_name:
+        candidates.append(str(address_name).strip())
+    if restaurant:
+        for key in ("address_name", "road_address_name"):
+            val = str(restaurant.get(key, "") or "").strip()
+            if val:
+                candidates.append(val)
+
+    for text in candidates:
+        primary_tokens = re.findall(r"[가-힣]+[0-9]*(?:읍|면|동)(?=\s|$)", text)
+        if primary_tokens:
+            return primary_tokens[0]
+        secondary_tokens = re.findall(r"[가-힣]+[0-9]*(?:리|가)(?=\s|$)", text)
+        if secondary_tokens:
+            return secondary_tokens[-1]
+    return ""
+
+
+def build_delivery_deep_links(
+    place_name: str, dong_name: str = ""
+) -> Dict[str, str]:
     """
-    쿠팡이츠 모바일 앱 스킴(`coupangeats://`), 네이버 모바일 통합 검색(플레이스 연동) URL 및 검색용 상호명을 생성합니다.
+    쿠팡이츠 모바일 앱 스킴(`coupangeats://`), 네이버 모바일 지도([동네명 + 식당명]) 직통 리뷰 검색 URL 및 검색용 상호명을 생성합니다.
     """
     clean_name = clean_store_search_name(place_name)
     encoded_name = quote(clean_name)
+    clean_dong = re.sub(r"\s+", " ", str(dong_name or "")).strip()
+    map_query_text = f"{clean_dong} {clean_name}".strip() if clean_dong else clean_name
+    query_str = quote(map_query_text)
 
     coupang_eats_url = f"coupangeats://search?keyword={encoded_name}"
-    naver_review_url = f"https://m.search.naver.com/search.naver?query={encoded_name}"
+    naver_review_url = f"https://m.map.naver.com/search2/search.naver?query={query_str}"
     return {
         "clean_store_name": clean_name,
         "coupang_eats_url": coupang_eats_url,
@@ -350,6 +378,7 @@ def analyze_delivery_spec(
     estimated_price: str,
     *,
     distance_m: Optional[int] = None,
+    address_name: str = "",
 ) -> Dict[str, Any]:
     """
     실제 배달앱 기준 매장별 최소주문금액, 추천 메뉴 가격 차액(Gap),
@@ -386,7 +415,8 @@ def analyze_delivery_spec(
                 f" (🚶 도보권({distance_m}m) 근거리 매장이므로 포장 픽업 시 {menu_price_int:,}원 그대로 배달비·최소주문 부담 0원)"
             )
 
-    links = build_delivery_deep_links(place_name)
+    dong_name = extract_dong_name(address_name, restaurant)
+    links = build_delivery_deep_links(place_name, dong_name=dong_name)
 
     return {
         "min_order_amount": min_order_amount,
