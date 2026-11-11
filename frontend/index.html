@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Dishcision 🍽️ | Zero-Typing AI 다이닝 에이전트</title>
+  <title>MenuFit - 내 몸에 딱 맞춘 3초 다이닝</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -22,8 +22,10 @@
               600: '#eb4714',
               700: '#c7360b',
             },
-            baemin: '#2AC1BC',
             kakao: '#FEE500',
+          },
+          scale: {
+            98: '0.98',
           },
         },
       },
@@ -31,7 +33,7 @@
   </script>
   <style>
     body {
-      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      font-family: 'Pretendard', -apple-system', BlinkMacSystemFont, system-ui, sans-serif;
       background: linear-gradient(160deg, #f3f6fb 0%, #eef2f9 50%, #f9f3ee 100%);
       -webkit-tap-highlight-color: transparent;
     }
@@ -88,57 +90,178 @@
 </head>
 <body class="min-h-screen flex items-center justify-center sm:py-6 sm:px-4 text-slate-900">
 
-  <!-- 모바일 최적화 앱 컨테이너 (최대 너비 448px, 중앙 정렬, 그림자 카드 스타일) -->
-  <div class="w-full max-w-[448px] min-h-screen sm:min-h-[780px] sm:max-h-[900px] bg-white sm:rounded-[32px] shadow-[0_24px_64px_-12px_rgba(15,23,42,0.16)] border border-slate-100 flex flex-col overflow-hidden relative">
+  <!-- 앱 첫 진입 시 고정밀 GPS 위치 권한 유도 모달 -->
+  <div
+    id="locationModal"
+    class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="locationModalTitle"
+  >
+    <div class="w-full max-w-[390px] bg-white rounded-[28px] p-5 sm:p-6 shadow-[0_28px_72px_-12px_rgba(15,23,42,0.35)] border border-slate-100 text-center animate-fade-slide my-auto">
+      <div class="mx-auto w-13 h-13 w-12 h-12 rounded-2xl bg-brand-50 border border-brand-200/80 flex items-center justify-center text-2xl mb-3 shadow-sm">
+        📍
+      </div>
+      <h2 id="locationModalTitle" class="text-[17px] sm:text-[18px] font-extrabold text-slate-900 leading-snug tracking-tight">
+        📍 정확한 주변 식당 추천을 위해 현재 위치가 필요합니다
+      </h2>
+      <p class="mt-2 text-[12.5px] text-slate-600 leading-relaxed">
+        현재 계신 위치를 기반으로 도보 15분 이내의 진짜 식당과 정확한 배달 매장을 찾아드립니다.
+      </p>
 
-    <!-- 상단 헤더: 서비스명 'Dishcision 🍽️' + 실시간 날씨 뱃지 -->
-    <header class="px-5 pt-5 pb-4 bg-white/95 backdrop-blur-md border-b border-slate-100 sticky top-0 z-20">
-      <div class="flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
+      <div id="modalGpsStatus" class="hidden mt-3 px-3 py-2.5 rounded-xl bg-sky-50 border border-sky-200 text-[12px] font-semibold text-sky-800 text-left leading-relaxed"></div>
+
+      <!-- 저정밀(IP/Wi-Fi 추정) 감지 시 주소 확인 카드 -->
+      <div id="modalDetectedCard" class="hidden mt-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-left">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="text-[11px] font-extrabold text-slate-500">감지된 위치 확인</span>
+          <span id="modalAccuracyBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800"></span>
+        </div>
+        <div id="modalDetectedAddress" class="text-[13.5px] font-extrabold text-slate-900"></div>
+        <p id="modalDetectedHint" class="mt-1 text-[11px] text-slate-600 leading-relaxed"></p>
+        <button
+          id="modalConfirmDetectedBtn"
+          type="button"
+          onclick="confirmDetectedLocation()"
+          class="mt-2.5 w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors"
+        >
+          이 위치로 계속하기
+        </button>
+      </div>
+
+      <button
+        id="modalStartGpsBtn"
+        type="button"
+        onclick="startWithHighAccuracyGps()"
+        class="mt-4 w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-brand-500 to-orange-500 hover:brightness-95 active:scale-[0.98] text-white text-[14px] font-extrabold shadow-lg shadow-brand-500/25 transition-all flex items-center justify-center gap-2"
+      >
+        <span>📍 현재 위치로 시작하기</span>
+      </button>
+
+      <!-- PC/네트워크 IP 오차 대비 1초 위치 직접 검색 보정 -->
+      <div id="manualLocationBox" class="mt-3.5 p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-left">
+        <label for="manualLocationInput" class="block text-[11px] font-extrabold text-slate-700 mb-1.5">
+          🔍 위치가 다르게 잡히나요? 동네 · 학교 · 역 직접 지정
+        </label>
+        <div class="flex items-center gap-1.5">
+          <input
+            id="manualLocationInput"
+            type="text"
+            placeholder="예: 협성대, 봉담읍, 강남역"
+            onkeydown="if (event.key === 'Enter') { event.preventDefault(); searchManualLocation(); }"
+            class="flex-1 min-w-0 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-brand-500"
+          />
           <button
-            id="brandResetBtn"
+            id="manualSearchBtn"
             type="button"
-            onclick="resetFlow()"
-            class="text-left group focus:outline-none"
-            title="처음으로 돌아가기"
+            onclick="searchManualLocation()"
+            class="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shrink-0 transition-colors"
           >
-            <h1 class="text-[22px] font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5">
-              <span>Dishcision</span>
-              <span class="text-xl">🍽️</span>
-            </h1>
-            <p class="text-[11px] font-medium text-slate-400 tracking-tight flex items-center gap-1">
-              <i data-lucide="sparkles" class="w-3 h-3 text-brand-500"></i>
-              <span>Zero-Typing 3-Tap AI 다이닝</span>
-            </p>
+            검색
           </button>
         </div>
+        <div id="locationSearchResults" class="hidden mt-2 space-y-1.5 max-h-36 overflow-y-auto"></div>
+      </div>
+
+      <div class="mt-3 p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/80 text-left">
+        <p class="text-[11px] font-semibold text-amber-900 leading-relaxed">
+          ⚠️ 위치 권한을 허용하지 않으시면 부정확한 기본 위치의 식당이 추천될 수 있습니다.
+        </p>
+      </div>
+
+      <button
+        id="modalSkipGpsBtn"
+        type="button"
+        onclick="skipGpsToDefaultLocation()"
+        class="mt-2.5 text-[11px] font-semibold text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors"
+      >
+        기본 위치(협성대 부근)로 임시 계속하기
+      </button>
+    </div>
+  </div>
+
+  <!-- 모바일 퍼스트 리포트 앱 컨테이너 (최대 너비 480px) -->
+  <div class="w-full max-w-[480px] min-h-screen sm:min-h-[820px] sm:max-h-[920px] bg-white sm:rounded-[32px] shadow-[0_24px_64px_-12px_rgba(15,23,42,0.16)] border border-slate-100 flex flex-col overflow-hidden relative">
+
+    <!-- 상단 헤더: 브랜드 + 실시간 날씨 + 도보/배달 토글 + GPS 위치 -->
+    <header id="appHeader" class="px-4 sm:px-5 pt-3 pb-2.5 bg-white/95 backdrop-blur-md border-b border-slate-100 sticky top-0 z-20">
+      <div class="flex items-center justify-between gap-2">
+        <button
+          id="brandResetBtn"
+          type="button"
+          onclick="resetFlow()"
+          class="text-left group focus:outline-none"
+          title="처음으로 돌아가기"
+        >
+          <h1 class="text-[22px] font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5 leading-none">
+            <span>MenuFit</span>
+            <span class="text-xl">🍽️</span>
+          </h1>
+        </button>
 
         <!-- 실시간 날씨 뱃지 -->
         <div
           id="weatherBadge"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100/90 border border-slate-200/70 text-xs font-semibold text-slate-700 shadow-sm shrink-0"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100/90 border border-slate-200/70 text-xs font-semibold text-slate-700 shadow-xs shrink-0"
         >
-          <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+          <span>🌤️</span>
           <span id="weatherText">쌀쌀한 흐림 · 7℃</span>
         </div>
       </div>
 
-      <!-- 위치 및 스텝 진행 바 -->
-      <div class="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+      <!-- 식사 방식 토글 스위치: [🚶 도보 매장 방문] vs [🛵 쿠팡이츠 배달] -->
+      <div
+        class="mt-2.5 p-1 rounded-2xl bg-slate-100 border border-slate-200/70 grid grid-cols-2 gap-1"
+        role="group"
+        aria-label="식사 방식 선택"
+      >
         <button
-          id="locationChip"
+          id="modeWalkBtn"
           type="button"
-          onclick="detectLocation()"
-          class="inline-flex items-center gap-1 text-slate-500 hover:text-slate-800 transition-colors"
+          onclick="setDeliveryMode('walk')"
+          aria-pressed="true"
+          class="py-1.5 px-2 rounded-xl text-[11.5px] sm:text-xs font-extrabold transition-all flex items-center justify-center gap-1 whitespace-nowrap bg-white text-slate-900 shadow-sm border border-slate-200/70"
         >
-          <i data-lucide="map-pin" class="w-3.5 h-3.5 text-brand-500"></i>
-          <span id="locationText">협성대 부근 기준 (반경 1km)</span>
+          <span>🚶 도보 매장 방문</span>
         </button>
-        <span id="stepBadge" class="font-bold text-brand-600">STEP 1 / 3</span>
+        <button
+          id="modeDeliveryBtn"
+          type="button"
+          onclick="setDeliveryMode('delivery')"
+          aria-pressed="false"
+          class="py-1.5 px-2 rounded-xl text-[11.5px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 whitespace-nowrap text-slate-500 hover:text-slate-800"
+        >
+          <span>🛵 쿠팡이츠 배달</span>
+        </button>
       </div>
 
-      <!-- 진행률 바 -->
-      <div class="mt-2 w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+      <!-- 위치 + [📍 내 현재 위치] 버튼 + 진행 스텝 -->
+      <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+        <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+          <button
+            type="button"
+            onclick="openLocationModal({ autoGps: false })"
+            class="inline-flex items-center gap-1 text-slate-700 hover:text-brand-600 font-semibold truncate text-left transition-colors"
+            title="위치 변경하기"
+          >
+            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-brand-500 shrink-0"></i>
+            <span id="locationText" class="truncate">경기도 화성시 효행구 봉담읍</span>
+          </button>
+          <button
+            id="locateBtn"
+            type="button"
+            onclick="detectLocation()"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-50 hover:bg-brand-100 text-brand-600 border border-brand-200/80 font-bold text-[10px] transition-colors shrink-0 shadow-xs"
+            title="고정밀 GPS 다시 잡기 또는 위치 직접 변경"
+          >
+            <span>📍 내 현재 위치</span>
+          </button>
+        </div>
+        <span id="stepBadge" class="font-bold text-brand-600 shrink-0">STEP 1 / 3</span>
+      </div>
+
+      <!-- 진행률 바 (Step 1~3 / 로딩에서만 표시, 결과 화면에서는 얇은 border-b 구분선만 유지) -->
+      <div id="progressBarWrap" class="mt-2 w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
         <div
           id="progressBar"
           class="h-full bg-gradient-to-r from-brand-500 to-amber-400 rounded-full transition-all duration-300 ease-out"
@@ -147,8 +270,8 @@
       </div>
     </header>
 
-    <!-- 메인 컨텐츠 영역 -->
-    <main class="flex-1 px-5 py-6 overflow-y-auto flex flex-col">
+    <!-- 메인 컨텐츠 -->
+    <main id="appMain" class="flex-1 px-4 sm:px-5 py-3.5 overflow-y-auto flex flex-col">
 
       <!-- STEP 1: 식사 모드 -->
       <section id="step1View" class="animate-fade-slide flex-1 flex flex-col">
@@ -160,7 +283,7 @@
             지금 어떤 식으로<br />먹고 싶나요?
           </h2>
           <p class="text-xs text-slate-500 mt-1.5">
-            검색창 입력 없이 딱 3번만 터치하면 AI가 바로 골라드려요.
+            검색 입력 없이 딱 3번만 터치하면 초정밀 AI 다이닝 분석 리포트를 만들어 드려요.
           </p>
         </div>
 
@@ -178,7 +301,7 @@
                 <span class="text-[16px] font-bold text-slate-900 group-hover:text-brand-600">간편 15분컷</span>
                 <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors"></i>
               </div>
-              <p class="text-xs text-slate-500 mt-0.5">햄버거, 토스트, 밥버거 등 빠른 한 입</p>
+              <p class="text-xs text-slate-500 mt-0.5">빠르고 깔끔한 버거, 토스트, 밥버거, 컵밥</p>
             </div>
           </button>
 
@@ -195,7 +318,7 @@
                 <span class="text-[16px] font-bold text-slate-900 group-hover:text-brand-600">제대로 된 한 끼</span>
                 <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors"></i>
               </div>
-              <p class="text-xs text-slate-500 mt-0.5">든든하게 채워주는 국밥, 도시락, 정식</p>
+              <p class="text-xs text-slate-500 mt-0.5">속을 든든히 채워주는 국밥, 찌개, 덮밥, 정식</p>
             </div>
           </button>
 
@@ -212,7 +335,7 @@
                 <span class="text-[16px] font-bold text-slate-900 group-hover:text-brand-600">가볍고 클린하게</span>
                 <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors"></i>
               </div>
-              <p class="text-xs text-slate-500 mt-0.5">부담 없는 샐러드, 포케, 랩 샌드위치</p>
+              <p class="text-xs text-slate-500 mt-0.5">부담 없는 샐러드, 포케, 샌드위치, 죽, 쌀국수</p>
             </div>
           </button>
         </div>
@@ -271,7 +394,7 @@
                 <span class="text-[16px] font-bold text-slate-900 group-hover:text-brand-600">밥 / 든든함</span>
                 <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors"></i>
               </div>
-              <p class="text-xs text-slate-500 mt-0.5">속이 꽉 차는 밥버거, 덮밥, 도시락, 웜볼</p>
+              <p class="text-xs text-slate-500 mt-0.5">속이 꽉 차는 도시락, 덮밥, 밥버거, 포케</p>
             </div>
           </button>
 
@@ -285,20 +408,20 @@
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between">
-                <span class="text-[16px] font-bold text-slate-900 group-hover:text-brand-600">뜨끈한 국물</span>
+                <span class="text-[16px] font-bold text-slate-900 group-hover:text-brand-600">면 / 뜨끈한 국물</span>
                 <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors"></i>
               </div>
-              <p class="text-xs text-slate-500 mt-0.5">추위를 녹여줄 순대국, 육개장, 짬뽕·면류</p>
+              <p class="text-xs text-slate-500 mt-0.5">추위를 녹여줄 국밥, 해장국, 찌개, 짬뽕·쌀국수</p>
             </div>
           </button>
         </div>
       </section>
 
-      <!-- STEP 3: 예산 -->
+      <!-- STEP 3: 도보 예산 / 배달 주문 규모 동적 선택 -->
       <section id="step3View" class="hidden animate-fade-slide flex-1 flex flex-col">
         <div class="mb-5">
           <div class="flex items-center justify-between mb-2">
-            <span class="inline-block px-2.5 py-1 rounded-lg bg-brand-50 text-brand-600 text-[11px] font-bold">
+            <span id="step3TapBadge" class="inline-block px-2.5 py-1 rounded-lg bg-brand-50 text-brand-600 text-[11px] font-bold">
               TAP 3 · 마지막 예산 기준
             </span>
             <button
@@ -310,7 +433,7 @@
               <span>이전</span>
             </button>
           </div>
-          <h2 class="text-[22px] font-extrabold text-slate-900 leading-snug">
+          <h2 id="step3QuestionHeading" class="text-[22px] font-extrabold text-slate-900 leading-snug">
             오늘 한 끼 예산은<br />어느 정도가 좋을까요?
           </h2>
           <p id="step3ContextHint" class="text-xs text-slate-500 mt-1.5"></p>
@@ -318,47 +441,49 @@
 
         <div class="space-y-4 flex-1">
           <button
+            id="step3Option1Btn"
             type="button"
-            onclick="selectStep3('budget')"
+            onclick="selectStep3Slot(1)"
             class="tap-card w-full text-left p-5 rounded-2xl border-2 border-slate-100 bg-white hover:border-brand-500 hover:bg-brand-50/40 shadow-sm hover:shadow-md flex items-center gap-4 group"
           >
-            <div class="w-13 h-13 w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-2xl shrink-0">
+            <div id="step3Option1Icon" class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-2xl shrink-0">
               🪙
             </div>
             <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between">
-                <span class="text-[17px] font-bold text-slate-900 group-hover:text-brand-600">가성비 (8,000원 이하)</span>
-                <i data-lucide="sparkles" class="w-4 h-4 text-brand-500"></i>
+              <div class="flex items-center justify-between gap-2">
+                <span id="step3Option1Title" class="text-[16px] sm:text-[17px] font-bold text-slate-900 group-hover:text-brand-600">가성비 (8,000원 이하)</span>
+                <i data-lucide="sparkles" class="w-4 h-4 text-brand-500 shrink-0"></i>
               </div>
-              <p class="text-xs text-slate-500 mt-1">주머니 가볍게! 알찬 8천원 이하 실속 픽</p>
+              <p id="step3Option1Desc" class="text-xs text-slate-500 mt-1">혼밥 알뜰 단품 · 주머니 가볍게 즐기는 실속 메뉴</p>
             </div>
           </button>
 
           <button
+            id="step3Option2Btn"
             type="button"
-            onclick="selectStep3('flexible')"
+            onclick="selectStep3Slot(2)"
             class="tap-card w-full text-left p-5 rounded-2xl border-2 border-slate-100 bg-white hover:border-brand-500 hover:bg-brand-50/40 shadow-sm hover:shadow-md flex items-center gap-4 group"
           >
-            <div class="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-2xl shrink-0">
+            <div id="step3Option2Icon" class="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-2xl shrink-0">
               💳
             </div>
             <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between">
-                <span class="text-[17px] font-bold text-slate-900 group-hover:text-brand-600">상관없음</span>
-                <i data-lucide="sparkles" class="w-4 h-4 text-brand-500"></i>
+              <div class="flex items-center justify-between gap-2">
+                <span id="step3Option2Title" class="text-[16px] sm:text-[17px] font-bold text-slate-900 group-hover:text-brand-600">실속 세트 (8,000~13,000원)</span>
+                <i data-lucide="sparkles" class="w-4 h-4 text-brand-500 shrink-0"></i>
               </div>
-              <p class="text-xs text-slate-500 mt-1">가격 제약 없이 오늘 컨디션 최적의 만족도 우선</p>
+              <p id="step3Option2Desc" class="text-xs text-slate-500 mt-1">든든한 정석 세트 · 과소비 없이 만족감을 채우는 구성</p>
             </div>
           </button>
         </div>
 
         <div class="mt-6 p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-[11px] text-slate-500 flex items-center gap-2.5">
           <i data-lucide="cpu" class="w-4 h-4 text-brand-500 shrink-0"></i>
-          <span>선택 즉시 <strong class="text-slate-700">Gemini 3.8 Flash</strong>가 날씨와 도보 거리를 함께 추론합니다.</span>
+          <span>선택 즉시 <strong class="text-slate-700">Gemini 3.8 Flash</strong>가 주소·탄단지(kcal)·날씨·동선을 종합 분석합니다.</span>
         </div>
       </section>
 
-      <!-- LOADING: Antigravity AI 추론 스피너 -->
+      <!-- LOADING: Gemini 3.8 Flash 초정밀 추론 스피너 -->
       <section id="loadingView" class="hidden flex-1 flex flex-col items-center justify-center text-center py-10 animate-fade-slide">
         <div class="relative w-24 h-24 flex items-center justify-center mb-6">
           <div class="orbit-outer absolute inset-0 rounded-full border-4 border-slate-100 border-t-brand-500 border-r-amber-400"></div>
@@ -369,59 +494,59 @@
         </div>
 
         <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 text-white text-[11px] font-bold tracking-wide mb-3">
-          ANTIGRAVITY RATIONALE AI
+          GEMINI 3.8 FLASH · RATIONALE AI
         </span>
         <h2 class="text-xl font-extrabold text-slate-900">
-          최적의 메뉴 Top 3 추론 중...
+          초정밀 AI 다이닝 리포트 생성 중...
         </h2>
-        <p id="loadingSubText" class="text-xs text-slate-500 mt-2 max-w-[280px] leading-relaxed">
-          주변 식당 위치와 현재 기온, 3-Tap 취향을 Gemini 3.8 Flash가 교차 분석하고 있습니다.
+        <p id="loadingSubText" class="text-xs text-slate-500 mt-2 max-w-[310px] leading-relaxed">
+          실시간 현재 위치 확인, 반경 내 실존 매장 검증, 탄단지 영양 수치와 동선 효율을 교차 분석하고 있습니다.
         </p>
 
-        <div class="mt-6 w-full max-w-[290px] space-y-2 text-left">
+        <div class="mt-6 w-full max-w-[310px] space-y-2 text-left">
           <div class="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-600">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>주변 도보권 식당 데이터 수집 완료</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+            <span id="loadingRadiusStep">주변 도보권(직선 1km · 실보행 ~1.3km) 실제 식당 수집 중</span>
           </div>
           <div class="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-600">
-            <span class="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></span>
-            <span id="loadingWeatherStep">날씨·체온 컨텍스트 매칭 중...</span>
+            <span class="w-2 h-2 rounded-full bg-sky-500 animate-pulse shrink-0"></span>
+            <span id="loadingWeatherStep">탄단지(kcal·g) · 기상 · 동선 수치 계산 중...</span>
           </div>
           <div class="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-brand-50/70 border border-brand-100 text-xs font-semibold text-brand-700">
-            <span class="w-2 h-2 rounded-full bg-brand-500 animate-ping"></span>
-            <span>Gemini 3.8 Flash 추천 근거 생성 중</span>
+            <span class="w-2 h-2 rounded-full bg-brand-500 animate-ping shrink-0"></span>
+            <span>확신의 픽 3선 · 반전 매력 2선 맞춤 리포트 작성 중</span>
           </div>
         </div>
       </section>
 
-      <!-- RESULT: Top 3 추천 카드 -->
+      <!-- RESULT: Top 2 양자택일 (확신의 픽 vs 반전 매력 픽) + 2.2초 Reroll + 소진 탈출 카드 -->
       <section id="resultView" class="hidden animate-fade-slide flex-1 flex flex-col">
-        <div class="mb-4 flex items-start justify-between gap-2">
-          <div>
-            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-50 text-brand-600 text-[11px] font-bold mb-1.5">
+        <div class="mb-2 flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-50 text-brand-600 text-[10.5px] font-bold mb-0.5">
               <i data-lucide="wand-2" class="w-3 h-3"></i>
-              <span>Dishcision AI Pick</span>
+              <span>AI Dining Choice · Top 2</span>
             </span>
-            <h2 class="text-[20px] font-extrabold text-slate-900 leading-tight">
-              결정 피로 끝! 오늘의 Top 3
+            <h2 class="text-[18px] font-extrabold text-slate-900 leading-tight tracking-tight">
+              결정 피로 끝! 확신의 픽 vs 반전 매력 픽
             </h2>
-            <p id="selectedSummaryText" class="text-[11px] text-slate-500 mt-1"></p>
+            <div id="selectedSummaryText" class="flex items-center gap-1 flex-wrap mt-1"></div>
           </div>
 
           <button
             type="button"
             onclick="resetFlow()"
-            class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 transition-colors shrink-0 inline-flex items-center gap-1"
+            class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[11.5px] font-bold text-slate-700 transition-colors shrink-0 inline-flex items-center gap-1"
           >
-            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
             <span>다시 고르기</span>
           </button>
         </div>
 
-        <!-- 에러 알림 배너 (필요 시 표시) -->
-        <div id="errorBox" class="hidden mb-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
-          <p class="font-bold mb-1">백엔드 연결에 문제가 발생했습니다.</p>
-          <p id="errorMessage" class="text-rose-600 mb-3"></p>
+        <!-- 에러 알림 배너 -->
+        <div id="errorBox" class="hidden mb-3 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+          <p class="font-bold mb-1">추천 요청을 처리할 수 없습니다.</p>
+          <p id="errorMessage" class="text-rose-600 mb-3 leading-relaxed"></p>
           <button
             type="button"
             onclick="fetchRecommendations()"
@@ -431,26 +556,144 @@
           </button>
         </div>
 
-        <!-- 카드 리스트 컨테이너 -->
-        <div id="cardsContainer" class="space-y-4 pb-4"></div>
+        <!-- 2차 리롤 시 반전 매력 픽 후보 소진 안내 배너 -->
+        <div
+          id="refreshExhaustedNotice"
+          class="hidden mb-2 px-3 py-2 rounded-xl bg-emerald-50/90 border border-emerald-200 text-emerald-900 text-[11.5px] font-bold flex items-center gap-2 animate-fade-slide"
+        >
+          <span class="text-sm shrink-0">✨</span>
+          <span class="leading-snug">반전 매력 픽은 2순위까지 모두 확인하셨어요! 마지막 <strong>확신의 3순위</strong> 추천을 단독으로 안내해 드립니다.</span>
+        </div>
+
+        <!-- Top 2 비교 카드 또는 비상 탈출 카드 컨테이너 -->
+        <div id="cardsContainer" class="space-y-2.5"></div>
+
+        <!-- 하단 2.2초 Reroll 액션 영역 -->
+        <div id="rerollActionBox" class="hidden pt-2 pb-1 mt-auto">
+          <button
+            id="btn-reroll"
+            type="button"
+            onclick="handleReroll()"
+            class="w-full py-3 bg-slate-900 hover:bg-black text-white rounded-2xl font-bold text-[13.5px] shadow-md flex items-center justify-center gap-2 transition active:scale-98"
+          >
+            <span>🔄 다른 메뉴 추천받기</span>
+          </button>
+        </div>
       </section>
 
     </main>
+
+    <!-- 2.2초 '노력의 착시(Labor Illusion)' Reroll 로딩 오버레이 팝업 -->
+    <div
+      id="rerollOverlay"
+      class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-5"
+      role="status"
+      aria-live="polite"
+      aria-modal="true"
+    >
+      <div class="w-full max-w-[340px] bg-white rounded-[28px] p-6 shadow-[0_28px_72px_-12px_rgba(15,23,42,0.38)] border border-slate-100 text-center animate-fade-slide">
+        <div class="mx-auto w-14 h-14 rounded-full border-4 border-slate-100 border-t-brand-500 border-r-amber-400 animate-spin mb-4"></div>
+        <p class="text-[14.5px] font-extrabold text-slate-900 leading-snug">
+          ⚡ AI가 실시간 반경 내 다음 대안을 정밀 분석 중입니다...
+        </p>
+        <p class="mt-1.5 text-[11.5px] font-medium text-slate-500">
+          최적의 확신의 픽 · 반전 매력 픽 조합을 매칭하고 있습니다
+        </p>
+      </div>
+    </div>
+
+    <!-- 쿠팡이츠 스마트 딥링크·상호명 복사 안내 시트 -->
+    <div
+      id="coupangAssistBanner"
+      class="hidden sticky bottom-3 mx-4 mb-3 p-3.5 rounded-2xl bg-slate-900 text-white shadow-2xl border border-slate-700/80 z-30 animate-fade-slide"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+          <div id="coupangAssistTitle" class="text-xs font-extrabold text-sky-400"></div>
+          <p id="coupangAssistDesc" class="mt-1 text-[11px] text-slate-300 leading-relaxed"></p>
+        </div>
+        <button
+          type="button"
+          onclick="hideCoupangAssist()"
+          class="text-slate-400 hover:text-white text-xs font-bold px-1.5 py-0.5 shrink-0"
+          aria-label="안내 닫기"
+        >
+          ✕
+        </button>
+      </div>
+      <div class="mt-2.5 flex items-center gap-1.5 flex-wrap">
+        <a
+          id="coupangAssistAppLink"
+          href="#"
+          class="hidden px-2.5 py-1.5 rounded-xl bg-blue-600 text-white text-[11px] font-extrabold hover:bg-blue-500 transition-colors"
+        >
+          🚀 쿠팡이츠 앱 열기
+        </a>
+        <a
+          id="coupangAssistWebLink"
+          href="https://www.coupangeats.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold transition-colors"
+        >
+          🌐 쿠팡이츠 웹
+        </a>
+        <a
+          id="coupangAssistNaverLink"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-[11px] font-bold border border-slate-700 transition-colors"
+        >
+          🔍 웹 검색 보기
+        </a>
+        <button
+          id="coupangAssistCopyBtn"
+          type="button"
+          onclick="copyAssistedStore()"
+          class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-[11px] font-bold border border-slate-700 transition-colors"
+        >
+          📋 상호명 다시 복사
+        </button>
+      </div>
+    </div>
   </div>
 
   <script>
-    const API_BASE_URL = "http://localhost:8000";
+    const API_BASE_URL = window.location.protocol.startsWith("http")
+      ? window.location.origin
+      : "http://localhost:8000";
 
-    const state = {
+    const DEFAULT_COORDS = {
       latitude: 37.2118,
       longitude: 126.9765,
+      address_name: "경기도 화성시 효행구 봉담읍",
+    };
+
+    const state = {
+      latitude: DEFAULT_COORDS.latitude,
+      longitude: DEFAULT_COORDS.longitude,
+      address_name: DEFAULT_COORDS.address_name,
+      delivery_mode: "walk",
       meal_mode: null,
       texture_temp: null,
       budget_tier: null,
-      locationLabel: "협성대 부근 기준 (반경 1km)",
+      isCustomLocation: false,
+      activeRequestId: 0,
+      abortController: null,
+      recommendations: null,
+      rerollCount: 0,
+      rerollTimerId: null,
+      isRerolling: false,
     };
 
     const LABELS = {
+      delivery_mode: {
+        walk: "🚶 도보 매장 방문",
+        delivery: "🛵 쿠팡이츠 배달",
+      },
       meal_mode: {
         quick: "⚡ 간편 15분컷",
         proper: "🍱 제대로 된 한 끼",
@@ -459,17 +702,164 @@
       texture_temp: {
         bread: "🍞 빵/패티",
         rice: "🍚 밥/든든함",
-        soup: "🍲 뜨끈한 국물",
+        soup: "🍲 면/국물",
       },
       budget_tier: {
         budget: "🪙 가성비 (8,000원 이하)",
-        flexible: "💳 예산 상관없음",
+        flexible: "💳 실속 세트 (8,000~13,000원)",
+        min_order_exact: "👤 1인 최소주문 딱맞춤",
+        generous_group: "👥 여유·든든 (2인 이상)",
+      },
+    };
+
+    const SUMMARY_PILLS = {
+      delivery_mode: {
+        walk: "🚶 도보 매장",
+        delivery: "🛵 쿠팡이츠 배달",
+      },
+      meal_mode: {
+        quick: "⚡ 간편 15분",
+        proper: "🍱 든든한 한 끼",
+        clean: "🥗 클린식",
+      },
+      texture_temp: {
+        bread: "🍞 빵/패티",
+        rice: "🍙 밥/든든함",
+        soup: "🍲 면/국물",
+      },
+      budget_tier: {
+        budget: "🪙 가성비",
+        flexible: "💳 실속 세트",
+        min_order_exact: "👤 1인 최소주문",
+        generous_group: "👥 2인 여유 세트",
       },
     };
 
     function refreshIcons() {
       if (window.lucide) {
         window.lucide.createIcons();
+      }
+    }
+
+    function updateLocationText() {
+      const locEl = document.getElementById("locationText");
+      if (!locEl) return;
+      locEl.textContent = state.address_name || "위치 확인 중";
+    }
+
+    function cancelPendingRecommend() {
+      state.activeRequestId += 1;
+      if (state.abortController) {
+        try {
+          state.abortController.abort();
+        } catch (_) {}
+        state.abortController = null;
+      }
+    }
+
+    function cancelPendingReroll() {
+      if (state.rerollTimerId !== null) {
+        clearTimeout(state.rerollTimerId);
+        state.rerollTimerId = null;
+      }
+      state.isRerolling = false;
+      const overlay = document.getElementById("rerollOverlay");
+      if (overlay) {
+        overlay.classList.add("hidden");
+      }
+      const rerollBtn = document.getElementById("btn-reroll");
+      if (rerollBtn) {
+        rerollBtn.disabled = false;
+      }
+    }
+
+    function updateStep3OptionsForMode() {
+      const isDelivery = state.delivery_mode === "delivery";
+      const tapBadge = document.getElementById("step3TapBadge");
+      const heading = document.getElementById("step3QuestionHeading");
+      const icon1 = document.getElementById("step3Option1Icon");
+      const title1 = document.getElementById("step3Option1Title");
+      const desc1 = document.getElementById("step3Option1Desc");
+      const icon2 = document.getElementById("step3Option2Icon");
+      const title2 = document.getElementById("step3Option2Title");
+      const desc2 = document.getElementById("step3Option2Desc");
+
+      if (isDelivery) {
+        if (tapBadge) tapBadge.textContent = "TAP 3 · 배달 주문 규모";
+        if (heading) heading.innerHTML = "배달 주문 구성은<br />어떻게 맞출까요?";
+        if (icon1) icon1.textContent = "👤";
+        if (title1) title1.textContent = "1인분 최소주문금액에 딱 맞게";
+        if (desc1) desc1.textContent = "단품 + 실속 사이드로 최소금액만 딱 채우는 1인 알뜰 주문";
+        if (icon2) icon2.textContent = "👥";
+        if (title2) title2.textContent = "여유 있고 든든하게 (2인 이상)";
+        if (desc2) desc2.textContent = "둘이서 함께 먹거나 푸짐하게 즐기는 넉넉한 세트 구성";
+      } else {
+        if (tapBadge) tapBadge.textContent = "TAP 3 · 마지막 예산 기준";
+        if (heading) heading.innerHTML = "오늘 한 끼 예산은<br />어느 정도가 좋을까요?";
+        if (icon1) icon1.textContent = "🪙";
+        if (title1) title1.textContent = "가성비 (8,000원 이하)";
+        if (desc1) desc1.textContent = "혼밥 알뜰 단품 · 주머니 가볍게 즐기는 실속 메뉴";
+        if (icon2) icon2.textContent = "💳";
+        if (title2) title2.textContent = "실속 세트 (8,000~13,000원)";
+        if (desc2) desc2.textContent = "든든한 정석 세트 · 과소비 없이 만족감을 채우는 구성";
+      }
+    }
+
+    function setDeliveryMode(mode) {
+      const nextMode = mode === "delivery" ? "delivery" : "walk";
+      const changed = nextMode !== state.delivery_mode;
+      state.delivery_mode = nextMode;
+
+      const walkBtn = document.getElementById("modeWalkBtn");
+      const deliveryBtn = document.getElementById("modeDeliveryBtn");
+      const activeClasses = [
+        "bg-white",
+        "text-slate-900",
+        "font-extrabold",
+        "shadow-sm",
+        "border",
+        "border-slate-200/70",
+      ];
+      const inactiveClasses = ["text-slate-500", "hover:text-slate-800", "font-bold"];
+
+      if (walkBtn && deliveryBtn) {
+        if (state.delivery_mode === "walk") {
+          walkBtn.classList.remove(...inactiveClasses);
+          walkBtn.classList.add(...activeClasses);
+          walkBtn.setAttribute("aria-pressed", "true");
+
+          deliveryBtn.classList.remove(...activeClasses);
+          deliveryBtn.classList.add(...inactiveClasses);
+          deliveryBtn.setAttribute("aria-pressed", "false");
+        } else {
+          deliveryBtn.classList.remove(...inactiveClasses);
+          deliveryBtn.classList.add(...activeClasses);
+          deliveryBtn.setAttribute("aria-pressed", "true");
+
+          walkBtn.classList.remove(...activeClasses);
+          walkBtn.classList.add(...inactiveClasses);
+          walkBtn.setAttribute("aria-pressed", "false");
+        }
+      }
+
+      updateStep3OptionsForMode();
+      updateLocationText();
+
+      // 모드 전환 시 기존 선택을 초기화하고 Step 1으로 부드럽게 리셋 (자동 API 호출 차단)
+      if (changed) {
+        cancelPendingRecommend();
+        cancelPendingReroll();
+        hideCoupangAssist();
+        state.meal_mode = null;
+        state.texture_temp = null;
+        state.budget_tier = null;
+        state.recommendations = null;
+        state.rerollCount = 0;
+        const errBox = document.getElementById("errorBox");
+        if (errBox) {
+          errBox.classList.add("hidden");
+        }
+        goToStep(1);
       }
     }
 
@@ -486,6 +876,26 @@
       }
     }
 
+    async function loadCurrentAddress() {
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/address?lat=${state.latitude}&lon=${state.longitude}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.address_name) {
+          state.address_name = data.address_name;
+          updateLocationText();
+        }
+      } catch (_) {
+        // 역지오코딩 실패 시 기존 주소 표시 유지
+      }
+    }
+
+    async function loadInitialContext() {
+      await Promise.allSettled([loadInitialWeather(), loadCurrentAddress()]);
+    }
+
     function updateWeatherBadge(weather, temp) {
       const el = document.getElementById("weatherText");
       if (el && weather && temp) {
@@ -493,29 +903,395 @@
       }
     }
 
-    function detectLocation() {
-      const locEl = document.getElementById("locationText");
-      if (!navigator.geolocation) {
-        locEl.textContent = "협성대 부근 기본 좌표 사용 중";
+    const HIGH_ACCURACY_TARGET_M = 150;
+    const WATCH_SAMPLE_WINDOW_MS = 3800;
+    let activeGeoWatchId = null;
+    let activeGeoTimerId = null;
+    let pendingDetectedLocation = null;
+
+    function isMobileGpsDevice() {
+      return (
+        /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
+      );
+    }
+
+    function stopGeoWatcher() {
+      if (activeGeoWatchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(activeGeoWatchId);
+        activeGeoWatchId = null;
+      }
+      if (activeGeoTimerId !== null) {
+        clearTimeout(activeGeoTimerId);
+        activeGeoTimerId = null;
+      }
+    }
+
+    function openLocationModal({ autoGps = false } = {}) {
+      const modal = document.getElementById("locationModal");
+      if (modal) {
+        modal.classList.remove("hidden");
+      }
+      if (autoGps) {
+        startWithHighAccuracyGps();
+      }
+    }
+
+    function closeLocationModal() {
+      stopGeoWatcher();
+      const modal = document.getElementById("locationModal");
+      if (modal) {
+        modal.classList.add("hidden");
+      }
+    }
+
+    function setModalStatus(message, tone = "info") {
+      const statusEl = document.getElementById("modalGpsStatus");
+      if (!statusEl) return;
+      if (!message) {
+        statusEl.classList.add("hidden");
+        statusEl.textContent = "";
         return;
       }
-      locEl.textContent = "현재 위치 확인 중...";
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          state.latitude = Number(pos.coords.latitude.toFixed(5));
-          state.longitude = Number(pos.coords.longitude.toFixed(5));
-          state.locationLabel = "내 현재 위치 기준 (반경 1km)";
-          locEl.textContent = state.locationLabel;
-          loadInitialWeather();
-        },
-        () => {
-          state.latitude = 37.2118;
-          state.longitude = 126.9765;
-          state.locationLabel = "협성대 부근 기준 (반경 1km)";
-          locEl.textContent = state.locationLabel;
-        },
-        { timeout: 3000 }
+      statusEl.textContent = message;
+      statusEl.classList.remove(
+        "hidden",
+        "bg-sky-50", "border-sky-200", "text-sky-800",
+        "bg-rose-50", "border-rose-200", "text-rose-700",
+        "bg-amber-50", "border-amber-200", "text-amber-900"
       );
+      if (tone === "error") {
+        statusEl.classList.add("bg-rose-50", "border-rose-200", "text-rose-700");
+      } else if (tone === "warn") {
+        statusEl.classList.add("bg-amber-50", "border-amber-200", "text-amber-900");
+      } else {
+        statusEl.classList.add("bg-sky-50", "border-sky-200", "text-sky-800");
+      }
+    }
+
+    function updateLocateButtonBadge(modeLabel, verified = false) {
+      const locateBtn = document.getElementById("locateBtn");
+      if (!locateBtn) return;
+      locateBtn.disabled = false;
+      locateBtn.classList.remove(
+        "opacity-60",
+        "bg-brand-50", "text-brand-600", "border-brand-200/80",
+        "bg-emerald-50", "text-emerald-700", "border-emerald-200",
+        "bg-amber-50", "text-amber-800", "border-amber-200"
+      );
+      if (verified) {
+        locateBtn.classList.add("bg-emerald-50", "text-emerald-700", "border-emerald-200");
+      } else if (modeLabel.includes("확인") || modeLabel.includes("변경")) {
+        locateBtn.classList.add("bg-amber-50", "text-amber-800", "border-amber-200");
+      } else {
+        locateBtn.classList.add("bg-brand-50", "text-brand-600", "border-brand-200/80");
+      }
+      locateBtn.innerHTML = `<span>${escapeHtml(modeLabel)}</span>`;
+    }
+
+    async function applyResolvedLocation({ lat, lon, addressName = null, badgeLabel = "📍 내 현재 위치 ✓", verified = true }) {
+      state.latitude = Number(Number(lat).toFixed(6));
+      state.longitude = Number(Number(lon).toFixed(6));
+      state.isCustomLocation = true;
+      if (addressName) {
+        state.address_name = addressName;
+      } else {
+        state.address_name = `위치 (${state.latitude.toFixed(4)}, ${state.longitude.toFixed(4)})`;
+      }
+      updateLocationText();
+      updateLocateButtonBadge(badgeLabel, verified);
+      closeLocationModal();
+
+      await loadInitialContext();
+
+      const resultView = document.getElementById("resultView");
+      if (
+        resultView &&
+        !resultView.classList.contains("hidden") &&
+        state.meal_mode &&
+        state.texture_temp &&
+        state.budget_tier
+      ) {
+        fetchRecommendations();
+      }
+    }
+
+    async function resolveAddressOnly(lat, lon) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/address?lat=${lat}&lon=${lon}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.address_name) {
+            return data.address_name;
+          }
+        }
+      } catch (_) {}
+      return `위치 (${Number(lat).toFixed(4)}, ${Number(lon).toFixed(4)})`;
+    }
+
+    function confirmDetectedLocation() {
+      if (!pendingDetectedLocation) return;
+      applyResolvedLocation({
+        lat: pendingDetectedLocation.lat,
+        lon: pendingDetectedLocation.lon,
+        addressName: pendingDetectedLocation.addressName,
+        badgeLabel: "📍 내 현재 위치 ✓",
+        verified: true,
+      });
+    }
+
+    function formatAccuracyText(accMeters) {
+      const m = Math.round(Number(accMeters) || 0);
+      if (m >= 1000) {
+        return `오차 ±${(m / 1000).toFixed(1)}km`;
+      }
+      return `오차 ±${m}m`;
+    }
+
+    function acquireHighAccuracyGps({ fromModal = false } = {}) {
+      stopGeoWatcher();
+      const locEl = document.getElementById("locationText");
+      const locateBtn = document.getElementById("locateBtn");
+      const modalBtn = document.getElementById("modalStartGpsBtn");
+      const detectedCard = document.getElementById("modalDetectedCard");
+
+      if (detectedCard) {
+        detectedCard.classList.add("hidden");
+      }
+      pendingDetectedLocation = null;
+
+      if (!navigator.geolocation) {
+        state.isCustomLocation = false;
+        updateLocationText();
+        if (fromModal) {
+          setModalStatus("이 브라우저는 GPS 위치 API를 지원하지 않습니다. 아래에서 동네·학교·역을 직접 검색해 주세요.", "error");
+        }
+        return;
+      }
+
+      if (locateBtn) {
+        locateBtn.disabled = true;
+        locateBtn.classList.add("opacity-60");
+      }
+      if (fromModal && modalBtn) {
+        modalBtn.disabled = true;
+        modalBtn.classList.add("opacity-75");
+        modalBtn.innerHTML = "<span>📡 고정밀 GPS 신호 수신 중...</span>";
+        setModalStatus("휴대폰/브라우저 위치 권한 팝업이 나타나면 '허용'을 눌러주세요. (정확도 검증 중)", "info");
+      }
+      if (locEl) {
+        locEl.textContent = "고정밀 GPS 위치 확인 중...";
+      }
+
+      let bestPos = null;
+      let finalized = false;
+
+      const finalizeSuccess = async (pos) => {
+        if (finalized) return;
+        finalized = true;
+        stopGeoWatcher();
+
+        const lat = Number(pos.coords.latitude.toFixed(6));
+        const lon = Number(pos.coords.longitude.toFixed(6));
+        const accuracy = Number(pos.coords.accuracy) || 9999;
+        const resolvedAddr = await resolveAddressOnly(lat, lon);
+        const isMobile = isMobileGpsDevice();
+        const isTrustworthyHardwareGps = isMobile && accuracy <= HIGH_ACCURACY_TARGET_M;
+
+        if (modalBtn) {
+          modalBtn.disabled = false;
+          modalBtn.classList.remove("opacity-75");
+          modalBtn.innerHTML = "<span>📍 현재 위치 다시 잡기</span>";
+        }
+
+        if (isTrustworthyHardwareGps) {
+          setModalStatus("");
+          await applyResolvedLocation({
+            lat,
+            lon,
+            addressName: resolvedAddr,
+            badgeLabel: "📍 내 현재 위치 ✓",
+            verified: true,
+          });
+          return;
+        }
+
+        // PC 브라우저(GPS 칩 부재 → IP/Wi-Fi 추정) 또는 모바일 실내 저정밀(오차 > 150m)인 경우
+        // 잘못된 도시(예: IP 기지국 위치 인천 부평구)로 무단 진입하지 않고 확인/직접 검색을 유도합니다!
+        pendingDetectedLocation = { lat, lon, addressName: resolvedAddr, accuracy };
+        if (fromModal && detectedCard) {
+          document.getElementById("modalDetectedAddress").textContent = resolvedAddr;
+          document.getElementById("modalAccuracyBadge").textContent = formatAccuracyText(accuracy);
+          document.getElementById("modalDetectedHint").textContent = isMobile
+            ? `GPS 정확도가 낮아(${formatAccuracyText(accuracy)}) 네트워크 추정 위치가 잡혔습니다. 위 주소가 실제 계신 곳과 다르면 아래에서 동네·역·학교를 검색해 주세요.`
+            : `PC 브라우저는 GPS 칩이 없어 통신사 IP/네트워크 기반으로 위치가 추정됩니다(${formatAccuracyText(accuracy)}). 실제 위치가 아니면 아래 검색창에서 동네·학교·역을 직접 지정해 주세요!`;
+          detectedCard.classList.remove("hidden");
+
+          setModalStatus(
+            `⚠️ 감지된 주소가 '${resolvedAddr}'입니다. 실제 위치와 다르면 아래에서 직접 지정해 주세요.`,
+            "warn"
+          );
+          const inputEl = document.getElementById("manualLocationInput");
+          if (inputEl) inputEl.focus();
+        }
+
+        state.latitude = lat;
+        state.longitude = lon;
+        state.address_name = resolvedAddr;
+        updateLocationText();
+        updateLocateButtonBadge("📍 위치 변경", false);
+        loadInitialWeather();
+      };
+
+      const finalizeError = async (err) => {
+        if (finalized) return;
+        finalized = true;
+        stopGeoWatcher();
+
+        state.latitude = DEFAULT_COORDS.latitude;
+        state.longitude = DEFAULT_COORDS.longitude;
+        state.address_name = DEFAULT_COORDS.address_name;
+        state.isCustomLocation = false;
+        updateLocationText();
+        updateLocateButtonBadge("📍 내 현재 위치", false);
+
+        if (modalBtn) {
+          modalBtn.disabled = false;
+          modalBtn.classList.remove("opacity-75");
+          modalBtn.innerHTML = "<span>📍 현재 위치 재시도</span>";
+        }
+
+        if (fromModal) {
+          const reason =
+            err && err.code === 1
+              ? "위치 권한이 거부되었습니다. 브라우저 설정에서 위치를 허용하거나 아래 검색창에서 동네·학교를 직접 지정해 주세요."
+              : "GPS 신호 수신 시간이 초과되었습니다. 아래 검색창에서 동네·학교·역을 직접 지정할 수 있습니다.";
+          setModalStatus(reason, "error");
+        }
+
+        await loadInitialContext();
+      };
+
+      activeGeoWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const acc = Number(pos.coords.accuracy) || 9999;
+          if (!bestPos || acc < (Number(bestPos.coords.accuracy) || 9999)) {
+            bestPos = pos;
+          }
+
+          if (acc <= HIGH_ACCURACY_TARGET_M) {
+            finalizeSuccess(bestPos);
+          } else if (fromModal) {
+            setModalStatus(
+              `📡 더 정확한 위성 GPS 신호 탐색 중... (현재 ${formatAccuracyText(acc)})`,
+              "info"
+            );
+          }
+        },
+        (err) => {
+          if (bestPos) {
+            finalizeSuccess(bestPos);
+          } else {
+            finalizeError(err);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+
+      activeGeoTimerId = setTimeout(() => {
+        if (bestPos) {
+          finalizeSuccess(bestPos);
+        } else {
+          finalizeError({ code: 3 });
+        }
+      }, WATCH_SAMPLE_WINDOW_MS);
+    }
+
+    async function searchManualLocation() {
+      const inputEl = document.getElementById("manualLocationInput");
+      const btnEl = document.getElementById("manualSearchBtn");
+      const resultsEl = document.getElementById("locationSearchResults");
+      const query = (inputEl ? inputEl.value : "").trim();
+      if (!query || !resultsEl) return;
+
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.textContent = "검색중";
+      }
+      resultsEl.classList.remove("hidden");
+      resultsEl.innerHTML = `<div class="text-[11px] text-slate-500 py-1.5">카카오 주소·장소 검색 중...</div>`;
+
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/search-location?query=${encodeURIComponent(query)}`
+        );
+        if (!res.ok) throw new Error("검색 실패");
+        const data = await res.json();
+        const items = Array.isArray(data.results) ? data.results : [];
+        if (items.length === 0) {
+          resultsEl.innerHTML = `<div class="text-[11px] text-rose-600 py-1.5">일치하는 지역을 찾지 못했습니다. (예: 봉담읍, 협성대, 강남역)</div>`;
+          return;
+        }
+
+        resultsEl.innerHTML = items
+          .map(
+            (item) => `
+              <button
+                type="button"
+                data-lat="${item.latitude}"
+                data-lon="${item.longitude}"
+                onclick="selectManualLocation(this.dataset.lat, this.dataset.lon)"
+                class="w-full text-left px-3 py-2 rounded-xl bg-white hover:bg-brand-50 border border-slate-200 hover:border-brand-400 transition-colors"
+              >
+                <div class="text-xs font-extrabold text-slate-900 truncate">${escapeHtml(item.place_name)}</div>
+                <div class="text-[10.5px] text-slate-500 truncate">${escapeHtml(item.address_name)}</div>
+              </button>
+            `
+          )
+          .join("");
+      } catch (_) {
+        resultsEl.innerHTML = `<div class="text-[11px] text-rose-600 py-1.5">장소 검색 중 오류가 발생했습니다.</div>`;
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = "검색";
+        }
+      }
+    }
+
+    async function selectManualLocation(latStr, lonStr) {
+      const lat = Number(latStr);
+      const lon = Number(lonStr);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      const resolvedAddr = await resolveAddressOnly(lat, lon);
+      setModalStatus("");
+      await applyResolvedLocation({
+        lat,
+        lon,
+        addressName: resolvedAddr,
+        badgeLabel: "📍 위치 지정 ✓",
+        verified: true,
+      });
+    }
+
+    function startWithHighAccuracyGps() {
+      acquireHighAccuracyGps({ fromModal: true });
+    }
+
+    function skipGpsToDefaultLocation() {
+      stopGeoWatcher();
+      state.latitude = DEFAULT_COORDS.latitude;
+      state.longitude = DEFAULT_COORDS.longitude;
+      state.address_name = DEFAULT_COORDS.address_name;
+      state.isCustomLocation = false;
+      updateLocationText();
+      updateLocateButtonBadge("📍 내 현재 위치", false);
+      closeLocationModal();
+      loadInitialContext();
+    }
+
+    function detectLocation() {
+      openLocationModal({ autoGps: true });
     }
 
     function showOnlyView(viewId) {
@@ -530,6 +1306,27 @@
           el.classList.add("hidden");
         }
       });
+
+      const isResult = viewId === "resultView";
+      const progressBarWrap = document.getElementById("progressBarWrap");
+      const stepBadge = document.getElementById("stepBadge");
+      const appMain = document.getElementById("appMain");
+      const appHeader = document.getElementById("appHeader");
+
+      if (progressBarWrap) {
+        progressBarWrap.classList.toggle("hidden", isResult);
+      }
+      if (stepBadge) {
+        stepBadge.classList.toggle("hidden", isResult);
+      }
+      if (appMain) {
+        appMain.classList.toggle("py-2", isResult);
+        appMain.classList.toggle("py-3.5", !isResult);
+      }
+      if (appHeader) {
+        appHeader.classList.toggle("pb-2", isResult);
+        appHeader.classList.toggle("pb-2.5", !isResult);
+      }
     }
 
     function goToStep(stepNumber) {
@@ -547,6 +1344,7 @@
           `선택됨: ${LABELS.meal_mode[state.meal_mode]}`;
         showOnlyView("step2View");
       } else if (stepNumber === 3) {
+        updateStep3OptionsForMode();
         stepBadge.textContent = "STEP 3 / 3";
         progressBar.style.width = "100%";
         document.getElementById("step3ContextHint").textContent =
@@ -566,175 +1364,704 @@
       goToStep(3);
     }
 
-    function selectStep3(budget) {
-      state.budget_tier = budget;
+    function selectStep3Slot(slot) {
+      const isDelivery = state.delivery_mode === "delivery";
+      state.budget_tier =
+        slot === 1
+          ? (isDelivery ? "min_order_exact" : "budget")
+          : (isDelivery ? "generous_group" : "flexible");
       fetchRecommendations();
     }
 
     function resetFlow() {
+      cancelPendingRecommend();
+      cancelPendingReroll();
+      hideCoupangAssist();
       state.meal_mode = null;
       state.texture_temp = null;
       state.budget_tier = null;
+      state.recommendations = null;
+      state.rerollCount = 0;
       document.getElementById("errorBox").classList.add("hidden");
+      const exhaustedNotice = document.getElementById("refreshExhaustedNotice");
+      if (exhaustedNotice) exhaustedNotice.classList.add("hidden");
+      const rerollBox = document.getElementById("rerollActionBox");
+      if (rerollBox) rerollBox.classList.add("hidden");
+      updateStep3OptionsForMode();
       goToStep(1);
     }
 
+    function switchToDeliveryAndReset() {
+      if (state.delivery_mode !== "delivery") {
+        setDeliveryMode("delivery");
+      } else {
+        resetFlow();
+      }
+    }
+
+    let lastAssistedStore = "";
+    let coupangAssistTimerId = null;
+
+    function hideCoupangAssist() {
+      if (coupangAssistTimerId) {
+        clearTimeout(coupangAssistTimerId);
+        coupangAssistTimerId = null;
+      }
+      const banner = document.getElementById("coupangAssistBanner");
+      if (banner) {
+        banner.classList.add("hidden");
+      }
+    }
+
+    async function copyTextQuietly(text) {
+      if (!text) return false;
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (_) {}
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.top = "-9999px";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        const copied = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return Boolean(copied);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function copyAssistedStore() {
+      const btn = document.getElementById("coupangAssistCopyBtn");
+      const ok = await copyTextQuietly(lastAssistedStore);
+      if (btn) {
+        btn.textContent = ok ? "✅ 복사됨!" : "📋 상호명 확인";
+        setTimeout(() => {
+          btn.textContent = "📋 상호명 다시 복사";
+        }, 1600);
+      }
+    }
+
+    function openCoupangEats(storeName, customDeepLink) {
+      const cleanName = String(storeName || "").trim();
+      if (!cleanName) return;
+
+      const encodedName = encodeURIComponent(cleanName);
+      const deepLink = customDeepLink || `coupangeats://search?keyword=${encodedName}`;
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const webSearchUrl = isMobile
+        ? `https://m.map.naver.com/search2/search.naver?query=${encodedName}`
+        : `https://map.naver.com/p/search/${encodedName}`;
+
+      lastAssistedStore = cleanName;
+      const copyPromise = copyTextQuietly(cleanName);
+
+      const banner = document.getElementById("coupangAssistBanner");
+      const titleEl = document.getElementById("coupangAssistTitle");
+      const descEl = document.getElementById("coupangAssistDesc");
+      const appLink = document.getElementById("coupangAssistAppLink");
+      const naverLink = document.getElementById("coupangAssistNaverLink");
+
+      if (appLink) {
+        appLink.href = deepLink;
+        appLink.classList.toggle("hidden", !isMobile);
+      }
+      if (naverLink) {
+        naverLink.href = webSearchUrl;
+      }
+
+      if (titleEl) {
+        titleEl.textContent = isMobile
+          ? `🚀 '${cleanName}' 복사 완료! 쿠팡이츠 앱으로 이동합니다.`
+          : `📋 '${cleanName}' 복사 완료! PC에서는 매장 정보/메뉴판으로 연결되며, 스마트폰 접속 시 쿠팡이츠 앱으로 즉시 이동합니다.`;
+      }
+      if (descEl) {
+        descEl.textContent = isMobile
+          ? "쿠팡이츠 앱이 열리면 상단 검색창에 복사된 매장명을 붙여넣기 하세요. (와우회원 무료배달 확인)"
+          : "새 탭에서 매장 정보를 열었습니다. 쿠팡이츠 주문 시 복사된 매장명을 검색창에 붙여넣기 하세요.";
+      }
+      if (banner) {
+        banner.classList.remove("hidden");
+      }
+
+      if (isMobile) {
+        window.location.href = deepLink;
+      } else {
+        window.open(webSearchUrl, "_blank", "noopener,noreferrer");
+      }
+
+      copyPromise.then((copied) => {
+        if (!copied && titleEl && lastAssistedStore === cleanName) {
+          titleEl.textContent = `📋 '${cleanName}' · 아래 [상호명 다시 복사] 후 쿠팡이츠에서 검색하세요`;
+        }
+      });
+
+      if (coupangAssistTimerId) {
+        clearTimeout(coupangAssistTimerId);
+      }
+      coupangAssistTimerId = setTimeout(hideCoupangAssist, 12000);
+    }
+
     async function fetchRecommendations() {
-      document.getElementById("stepBadge").textContent = "AI 추론 중";
+      cancelPendingRecommend();
+      cancelPendingReroll();
+      hideCoupangAssist();
+      const requestId = state.activeRequestId;
+      const controller = new AbortController();
+      state.abortController = controller;
+      const requestedMode = state.delivery_mode === "delivery" ? "delivery" : "walk";
+
+      document.getElementById("stepBadge").textContent = "AI 분석 중";
       document.getElementById("progressBar").style.width = "100%";
       document.getElementById("errorBox").classList.add("hidden");
+      const exhaustedNotice = document.getElementById("refreshExhaustedNotice");
+      if (exhaustedNotice) exhaustedNotice.classList.add("hidden");
+      const rerollBox = document.getElementById("rerollActionBox");
+      if (rerollBox) rerollBox.classList.add("hidden");
+
+      const radiusStepEl = document.getElementById("loadingRadiusStep");
+      if (radiusStepEl) {
+        radiusStepEl.textContent =
+          requestedMode === "delivery"
+            ? "배달권(가까운 1km 포함 최대 3.5km) 실제 식당 수집 중"
+            : "도보권(직선 1km · 실보행 약 1.3km) 실제 식당 수집 중";
+      }
+
       showOnlyView("loadingView");
       refreshIcons();
 
       try {
         const response = await fetch(`${API_BASE_URL}/api/recommend`, {
           method: "POST",
+          signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
             latitude: state.latitude,
             longitude: state.longitude,
+            delivery_mode: requestedMode,
             meal_mode: state.meal_mode || "quick",
             texture_temp: state.texture_temp || "bread",
-            budget_tier: state.budget_tier || "budget",
+            budget_tier:
+              state.budget_tier || (requestedMode === "delivery" ? "min_order_exact" : "budget"),
           }),
         });
 
         if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`서버 응답 오류 (${response.status}): ${text}`);
+          let detailMessage = "";
+          try {
+            const errJson = await response.json();
+            detailMessage = errJson.detail || JSON.stringify(errJson);
+          } catch (_) {
+            detailMessage = await response.text();
+          }
+          throw new Error(`서버 응답 오류 (${response.status}): ${detailMessage}`);
         }
 
         const data = await response.json();
+
+        // 도보/배달 모드 전환 중 이전 요청 응답이 뒤늦게 도착하면 완전 격리 폐기
+        if (requestId !== state.activeRequestId) {
+          return;
+        }
+        if (data.delivery_mode && data.delivery_mode !== state.delivery_mode) {
+          return;
+        }
+
         renderResults(data);
       } catch (err) {
+        if (err && err.name === "AbortError") {
+          return;
+        }
+        if (requestId !== state.activeRequestId) {
+          return;
+        }
         document.getElementById("stepBadge").textContent = "연결 오류";
         document.getElementById("cardsContainer").innerHTML = "";
+        if (exhaustedNotice) exhaustedNotice.classList.add("hidden");
+        if (rerollBox) rerollBox.classList.add("hidden");
         document.getElementById("errorMessage").textContent =
           err.message || "http://localhost:8000 서버가 실행 중인지 확인해주세요.";
         document.getElementById("errorBox").classList.remove("hidden");
         showOnlyView("resultView");
         refreshIcons();
+      } finally {
+        if (state.abortController === controller) {
+          state.abortController = null;
+        }
       }
     }
 
-    function getPersonaStyle(rank, persona) {
-      if (rank === 1 || persona.includes("최적")) {
+    function getPersonaStyle(item) {
+      const isRefresh =
+        item.persona_type === "refresh" ||
+        String(item.category_persona || "").includes("반전") ||
+        String(item.category_persona || "").includes("리프레시");
+      const rankNum = Math.max(1, Number(item.rank) || 1);
+      if (isRefresh) {
         return {
-          cardBorder: "border-brand-500/40 ring-1 ring-brand-500/15",
-          rankBg: "bg-gradient-to-r from-brand-500 to-orange-500 text-white",
-          personaBg: "bg-brand-50 text-brand-700 border border-brand-200",
-        };
-      }
-      if (rank === 2 || persona.includes("가성비")) {
-        return {
-          cardBorder: "border-slate-200",
-          rankBg: "bg-slate-800 text-white",
-          personaBg: "bg-amber-50 text-amber-800 border border-amber-200",
+          cardBorder: "border-emerald-500/35 ring-1 ring-emerald-500/10",
+          badgeBg: "bg-gradient-to-r from-emerald-600 to-teal-500 text-white shadow-xs",
+          calBadgeBg: "bg-emerald-600 text-white shadow-xs",
+          badgeLabel: `✨ 반전 매력 ${rankNum}순위`,
         };
       }
       return {
-        cardBorder: "border-slate-200",
-        rankBg: "bg-emerald-600 text-white",
-        personaBg: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+        cardBorder: "border-brand-500/45 ring-1 ring-brand-500/15",
+        badgeBg: "bg-gradient-to-r from-brand-500 to-orange-500 text-white shadow-xs",
+        calBadgeBg: "bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-xs",
+        badgeLabel: `🎯 확신의 ${rankNum}순위`,
       };
     }
 
     function escapeHtml(value) {
-      const div = document.createElement("div");
-      div.textContent = value ?? "";
-      return div.innerHTML;
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function toggleAccordion(index) {
+      const panelEl = document.getElementById(`accordion-panel-${index}`);
+      const textEl = document.getElementById(`accordion-text-${index}`);
+      const btnEl = document.getElementById(`accordion-btn-${index}`);
+      if (!panelEl || !textEl) return;
+
+      const isHidden = panelEl.classList.contains("hidden");
+      if (isHidden) {
+        panelEl.classList.remove("hidden");
+        panelEl.classList.remove("animate-fade-slide");
+        void panelEl.offsetWidth;
+        panelEl.classList.add("animate-fade-slide");
+        textEl.textContent = "▲ 분석 리포트 접기";
+        if (btnEl) btnEl.setAttribute("aria-expanded", "true");
+      } else {
+        panelEl.classList.add("hidden");
+        textEl.textContent = "🔍 AI 맞춤 분석 리포트 보기 (날씨·꿀팁·동선) ▼";
+        if (btnEl) btnEl.setAttribute("aria-expanded", "false");
+      }
+    }
+
+    function buildRecommendationCardHtml(item, index, responseMode) {
+      const isDeliveryMode = responseMode === "delivery";
+      const distanceIcon = isDeliveryMode ? "bike" : "footprints";
+      const style = getPersonaStyle(item);
+      const nut = item.nutrition || {};
+      const cal = Math.max(0, Number(nut.calories) || 0);
+      const rawCalPerPerson =
+        nut.calories_per_person !== null && nut.calories_per_person !== undefined
+          ? Number(nut.calories_per_person)
+          : 0;
+      const calPerPerson =
+        Number.isFinite(rawCalPerPerson) && rawCalPerPerson > 0
+          ? Math.round(rawCalPerPerson)
+          : 0;
+      const calBadgeText =
+        calPerPerson > 0
+          ? `🔥 총 ${cal} kcal (1인당 약 ${calPerPerson} kcal)`
+          : `🔥 ${cal} kcal`;
+      const isMealKit = item.is_meal_kit === true;
+      const mealKitBadgeHtml = isMealKit
+        ? `<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10.5px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">⚠️ 냄비 조리</span>`
+        : "";
+      const carbs = Math.max(0, Number(nut.carbs_g) || 0);
+      const protein = Math.max(0, Number(nut.protein_g) || 0);
+      const fat = Math.max(0, Number(nut.fat_g) || 0);
+
+      const cleanStoreName = String(item.clean_store_name || item.restaurant_name || "").trim();
+      const safeName = escapeHtml(item.restaurant_name);
+      const safeCleanName = escapeHtml(cleanStoreName);
+      const safeMenu = escapeHtml(item.recommended_menu);
+      const safePrice = escapeHtml(item.estimated_price);
+      const safeDistance = escapeHtml(item.distance_display || "");
+      const safeBadgeLabel = escapeHtml(style.badgeLabel);
+      const safeEmoji = escapeHtml(item.emoji || "🍽️");
+      const safeNutHighlight = escapeHtml(nut.nutrition_highlight || "");
+      const safeWeatherFit = escapeHtml(item.weather_fit || "");
+      const safeProTip = escapeHtml(item.pro_tip || "");
+      const safeTimeEff = escapeHtml(item.time_efficiency || "");
+      const safeCoupangUrl = escapeHtml(
+        item.coupang_eats_url || `coupangeats://search?keyword=${encodeURIComponent(cleanStoreName)}`
+      );
+      const kakaoUrl =
+        item.kakao_map_url ||
+        `https://map.kakao.com/link/search/${encodeURIComponent(cleanStoreName)}`;
+
+      const spec = item.delivery_spec || null;
+      const deliveryAnalysisHtml =
+        isDeliveryMode && spec
+          ? (() => {
+              const shortfall = Math.max(0, Number(spec.shortfall_price) || 0);
+              const safeMinOrder = escapeHtml(spec.min_order_price || "13,000원");
+              const safeCoupangBenefit = escapeHtml(
+                spec.coupang_benefit || "🚀 쿠팡이츠 와우 배달비 0원"
+              );
+              const safeFiller = escapeHtml(spec.filler_recommendation || "");
+
+              const shortfallBlock =
+                shortfall > 0
+                  ? `
+                    <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-100/90 border border-amber-200 text-amber-900 text-[10.5px] font-extrabold mb-1">
+                      <span>⚠️ 단품 주문 시 최소주문금액에서 ${shortfall.toLocaleString()}원 부족</span>
+                    </div>
+                    <div class="p-2 rounded-xl bg-white/95 border border-indigo-200/80 text-[11px] text-slate-800 leading-relaxed">
+                      <span class="font-extrabold text-indigo-700">💡 최소금액 맞춤 꿀조합:</span>
+                      <span class="font-medium">${safeFiller}</span>
+                    </div>
+                  `
+                  : `
+                    <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100/90 border border-emerald-200 text-emerald-800 text-[11px] font-extrabold w-full">
+                      <span>✅ 추가 메뉴 없이 1인 단독 배달 바로 가능!</span>
+                    </div>
+                  `;
+
+              return `
+                <div class="mb-1.5 p-2 rounded-xl bg-gradient-to-br from-slate-50 via-blue-50/55 to-indigo-50/70 border border-indigo-200/80">
+                  <div class="flex items-center justify-between gap-1.5 flex-wrap mb-1">
+                    <span class="text-[11px] font-extrabold text-slate-900">
+                      🛵 배달 주문 &amp; 최소금액 분석
+                    </span>
+                    <div class="flex items-center gap-1 flex-wrap">
+                      <span class="px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-700 text-[10px] font-extrabold">
+                        최소주문 ${safeMinOrder}
+                      </span>
+                      <span class="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-extrabold shadow-xs">
+                        ${safeCoupangBenefit}
+                      </span>
+                    </div>
+                  </div>
+                  ${shortfallBlock}
+                </div>
+              `;
+            })()
+          : "";
+
+      const actionButtonsHtml = isDeliveryMode
+        ? `
+          <div class="grid grid-cols-3 gap-1.5 mt-1.5">
+            <button
+              type="button"
+              data-restaurant="${safeCleanName}"
+              data-deeplink="${safeCoupangUrl}"
+              onclick="openCoupangEats(this.dataset.restaurant, this.dataset.deeplink)"
+              class="col-span-2 inline-flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:brightness-105 active:scale-[0.99] text-white text-[11.5px] font-extrabold shadow-sm shadow-blue-500/20 transition-all"
+            >
+              <span>🚀 쿠팡이츠 주문</span>
+            </button>
+            <a
+              href="${escapeHtml(kakaoUrl)}"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="col-span-1 inline-flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-slate-700 text-[11.5px] font-extrabold transition-colors"
+            >
+              <span>📍 매장정보</span>
+            </a>
+          </div>
+        `
+        : `
+          <div class="mt-1.5">
+            <a
+              href="${escapeHtml(kakaoUrl)}"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-kakao hover:brightness-95 text-slate-900 text-xs font-extrabold shadow-sm transition-all"
+            >
+              <span>📍 카카오맵 길찾기</span>
+            </a>
+          </div>
+        `;
+
+      return `
+        <article class="rounded-2xl bg-white border ${style.cardBorder} p-3 shadow-[0_8px_20px_-10px_rgba(15,23,42,0.12)] animate-fade-slide">
+          <!-- 상단 뱃지 행: 단일 통합 순위 픽 + 칼로리 (+ 밀키트 경고) -->
+          <div class="flex items-center gap-1.5 flex-wrap mb-1.5">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10.5px] font-extrabold ${style.badgeBg}">
+              ${safeBadgeLabel}
+            </span>
+            ${mealKitBadgeHtml}
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-extrabold whitespace-nowrap ${style.calBadgeBg}">
+              ${calBadgeText}
+            </span>
+          </div>
+
+          <!-- 토스 스타일 푸드 이모지 엠블럼 + 식당명 + 추천 메뉴/가격 -->
+          <div class="flex items-center gap-2.5 mb-1.5">
+            <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl flex-shrink-0 shadow-xs border border-slate-200/60">${safeEmoji}</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <h3 class="text-[15px] font-extrabold text-slate-900 tracking-tight truncate max-w-full">
+                  ${safeName}
+                </h3>
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold shrink-0">
+                  <i data-lucide="${distanceIcon}" class="w-2.5 h-2.5 text-brand-500"></i>
+                  <span>${safeDistance}</span>
+                </span>
+              </div>
+              <div class="mt-0.5 flex items-baseline gap-1.5 flex-wrap leading-snug">
+                <span class="text-[12.5px] font-bold text-blue-600 break-keep">${safeMenu}</span>
+                <span class="text-[12.5px] font-bold text-slate-800 shrink-0">${safePrice}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 배달 모드 전용: 배달 주문 & 최소금액 분석 박스 -->
+          ${deliveryAnalysisHtml}
+
+          <!-- 탄단지 영양 수치화 카드 -->
+          <div class="mb-1 p-1.5 rounded-xl bg-emerald-50/60 border border-emerald-200/70">
+            <div class="grid grid-cols-3 gap-1 mb-0.5">
+              <div class="px-1.5 py-0.5 rounded-lg bg-white/90 border border-amber-100 text-center">
+                <div class="text-[9.5px] font-semibold text-slate-500 flex items-center justify-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span>탄수화물</span>
+                </div>
+                <div class="text-[11.5px] font-extrabold text-slate-900">${carbs}g</div>
+              </div>
+              <div class="px-1.5 py-0.5 rounded-lg bg-white/90 border border-emerald-100 text-center">
+                <div class="text-[9.5px] font-semibold text-slate-500 flex items-center justify-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>단백질</span>
+                </div>
+                <div class="text-[11.5px] font-extrabold text-emerald-700">${protein}g</div>
+              </div>
+              <div class="px-1.5 py-0.5 rounded-lg bg-white/90 border border-rose-100 text-center">
+                <div class="text-[9.5px] font-semibold text-slate-500 flex items-center justify-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                  <span>지방</span>
+                </div>
+                <div class="text-[11.5px] font-extrabold text-slate-900">${fat}g</div>
+              </div>
+            </div>
+            <p class="text-[10.5px] text-slate-700 leading-snug font-medium">
+              🥗 ${safeNutHighlight}
+            </p>
+          </div>
+
+          <!-- 아코디언 토글 버튼 -->
+          <button
+            id="accordion-btn-${index}"
+            type="button"
+            onclick="toggleAccordion(${index})"
+            aria-expanded="false"
+            aria-controls="accordion-panel-${index}"
+            class="w-full py-1 bg-slate-50 hover:bg-slate-100 text-[11px] font-semibold text-slate-600 rounded-xl flex items-center justify-center gap-1 my-1 transition"
+          >
+            <span id="accordion-text-${index}">🔍 AI 맞춤 분석 리포트 보기 (날씨·꿀팁·동선) ▼</span>
+          </button>
+
+          <!-- 기상 · 꿀조합 · 동선 3단 인사이트 (기본 접힘 아코디언) -->
+          <div id="accordion-panel-${index}" class="hidden space-y-1.5 mb-1.5">
+            <div class="p-2 rounded-xl bg-sky-50/75 border border-sky-100">
+              <div class="text-[11px] font-extrabold text-sky-900 mb-0.5">
+                🌤️ 기상 환경 분석
+              </div>
+              <p class="text-[11px] text-slate-700 leading-relaxed">
+                ${safeWeatherFit}
+              </p>
+            </div>
+
+            <div class="p-2 rounded-xl bg-amber-50/75 border border-amber-100">
+              <div class="text-[11px] font-extrabold text-amber-900 mb-0.5">
+                💡 주문 꿀조합 팁
+              </div>
+              <p class="text-[11px] text-slate-700 leading-relaxed">
+                ${safeProTip}
+              </p>
+            </div>
+
+            <div class="p-2 rounded-xl bg-indigo-50/75 border border-indigo-100">
+              <div class="text-[11px] font-extrabold text-indigo-900 mb-0.5">
+                ⏱️ 동선 &amp; 방문 팁
+              </div>
+              <p class="text-[11px] text-slate-700 leading-relaxed">
+                ${safeTimeEff}
+              </p>
+            </div>
+          </div>
+
+          <!-- 하단 액션 버튼 -->
+          ${actionButtonsHtml}
+        </article>
+      `;
+    }
+
+    function renderEmergencyExitCard() {
+      return `
+        <div
+          id="emergencyExitCard"
+          class="rounded-3xl bg-gradient-to-b from-slate-50 to-white border border-slate-200/90 p-6 text-center shadow-[0_14px_32px_-12px_rgba(15,23,42,0.12)] animate-fade-slide my-2"
+        >
+          <div class="mx-auto w-14 h-14 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center justify-center text-3xl mb-4">
+            🤔
+          </div>
+          <h3 class="text-[18px] font-extrabold text-slate-900 tracking-tight leading-snug">
+            🤔 준비된 추천을 모두 살펴보셨네요!
+          </h3>
+          <p class="mt-2 text-[12.5px] text-slate-600 leading-relaxed max-w-[300px] mx-auto">
+            혹시 처음에 선택하신 조건이 오늘따라 안 당기시나요? 새로운 기분으로 다시 찾아보세요.
+          </p>
+
+          <div class="mt-6 space-y-2.5">
+            <button
+              type="button"
+              onclick="resetFlow()"
+              class="w-full py-3.5 px-4 rounded-2xl bg-slate-900 hover:bg-black text-white text-sm font-bold shadow-md flex items-center justify-center gap-2 transition active:scale-98"
+            >
+              <span>🔄 조건 바꿔서 처음부터 다시 찾기</span>
+            </button>
+            <button
+              type="button"
+              onclick="switchToDeliveryAndReset()"
+              class="w-full py-3.5 px-4 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 text-sm font-bold flex items-center justify-center gap-2 transition active:scale-98"
+            >
+              <span>🛵 도보 대신 배달로 범위 넓히기</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCurrentRerollSlice() {
+      const data = state.recommendations;
+      if (!data) return;
+
+      const container = document.getElementById("cardsContainer");
+      const exhaustedNotice = document.getElementById("refreshExhaustedNotice");
+      const rerollBox = document.getElementById("rerollActionBox");
+      const responseMode = data.delivery_mode || state.delivery_mode;
+
+      const standards = Array.isArray(data.standards) ? data.standards : [];
+      const refreshes = Array.isArray(data.refreshes) ? data.refreshes : [];
+
+      let cardsToShow = [];
+      let showRefreshExhausted = false;
+
+      if (state.rerollCount === 0) {
+        cardsToShow = [standards[0], refreshes[0]].filter(Boolean);
+      } else if (state.rerollCount === 1) {
+        cardsToShow = [standards[1], refreshes[1]].filter(Boolean);
+      } else if (state.rerollCount === 2) {
+        cardsToShow = [standards[2]].filter(Boolean);
+        showRefreshExhausted = true;
+      }
+
+      if (cardsToShow.length === 0 || state.rerollCount >= 3) {
+        if (exhaustedNotice) exhaustedNotice.classList.add("hidden");
+        if (rerollBox) rerollBox.classList.add("hidden");
+        container.innerHTML = renderEmergencyExitCard();
+        refreshIcons();
+        return;
+      }
+
+      if (exhaustedNotice) {
+        exhaustedNotice.classList.toggle("hidden", !showRefreshExhausted);
+      }
+      if (rerollBox) {
+        rerollBox.classList.remove("hidden");
+      }
+
+      container.innerHTML = cardsToShow
+        .map((item, idx) => buildRecommendationCardHtml(item, idx, responseMode))
+        .join("");
+
+      refreshIcons();
+      const mainEl = document.querySelector("main");
+      if (mainEl) {
+        mainEl.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+
+    const REROLL_DELAY_MS = 2200;
+
+    function handleReroll() {
+      if (state.isRerolling || !state.recommendations) return;
+      state.isRerolling = true;
+
+      const rerollBtn = document.getElementById("btn-reroll");
+      if (rerollBtn) {
+        rerollBtn.disabled = true;
+      }
+      const overlay = document.getElementById("rerollOverlay");
+      if (overlay) {
+        overlay.classList.remove("hidden");
+      }
+
+      state.rerollTimerId = setTimeout(() => {
+        state.rerollTimerId = null;
+        state.isRerolling = false;
+        if (overlay) {
+          overlay.classList.add("hidden");
+        }
+        if (rerollBtn) {
+          rerollBtn.disabled = false;
+        }
+        state.rerollCount += 1;
+        renderCurrentRerollSlice();
+      }, REROLL_DELAY_MS);
     }
 
     function renderResults(data) {
+      if (data.address_name) {
+        state.address_name = data.address_name;
+        updateLocationText();
+      }
       updateWeatherBadge(data.current_weather, data.temperature);
 
-      document.getElementById("stepBadge").textContent = "추천 완료";
-      document.getElementById("selectedSummaryText").textContent =
-        `${LABELS.meal_mode[state.meal_mode] || ""} · ${LABELS.texture_temp[state.texture_temp] || ""} · ${LABELS.budget_tier[state.budget_tier] || ""}`;
+      const responseMode = data.delivery_mode || state.delivery_mode;
+      state.recommendations = data;
+      state.rerollCount = 0;
 
-      const container = document.getElementById("cardsContainer");
-      const items = Array.isArray(data.top3) ? data.top3 : [];
+      const pillTags = [
+        SUMMARY_PILLS.delivery_mode[responseMode],
+        SUMMARY_PILLS.meal_mode[state.meal_mode],
+        SUMMARY_PILLS.texture_temp[state.texture_temp],
+        SUMMARY_PILLS.budget_tier[state.budget_tier],
+      ].filter(Boolean);
 
-      container.innerHTML = items
-        .map((item) => {
-          const style = getPersonaStyle(item.rank, item.category_persona || "");
-          const safeName = escapeHtml(item.restaurant_name);
-          const safeMenu = escapeHtml(item.recommended_menu);
-          const safePrice = escapeHtml(item.estimated_price);
-          const safeWalk = escapeHtml(item.distance_walk);
-          const safePersona = escapeHtml(item.category_persona);
-          const safeReason = escapeHtml(item.ai_reason).replace(/\n/g, "<br />");
-          const baeminUrl = item.baemin_url || `baemin://search?query=${encodeURIComponent(item.restaurant_name || "")}`;
-          const kakaoUrl = item.kakao_map_url || `https://map.kakao.com/link/search/${encodeURIComponent(item.restaurant_name || "")}`;
+      const summaryEl = document.getElementById("selectedSummaryText");
+      if (summaryEl) {
+        summaryEl.innerHTML = pillTags
+          .map(
+            (label) =>
+              `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200/80 text-[10.5px] font-bold text-slate-600 leading-tight">${escapeHtml(label)}</span>`
+          )
+          .join("");
+      }
 
-          return `
-            <article class="rounded-2xl bg-white border ${style.cardBorder} p-4 shadow-[0_10px_28px_-12px_rgba(15,23,42,0.12)]">
-              <div class="flex items-center justify-between gap-2 mb-3">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold ${style.rankBg}">
-                    ${item.rank}위
-                  </span>
-                  <span class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${style.personaBg}">
-                    ${safePersona}
-                  </span>
-                </div>
-                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold shrink-0">
-                  <i data-lucide="footprints" class="w-3 h-3 text-slate-500"></i>
-                  <span>${safeWalk}</span>
-                </span>
-              </div>
-
-              <div class="mb-3">
-                <h3 class="text-[18px] font-extrabold text-slate-900 tracking-tight">
-                  ${safeName}
-                </h3>
-                <div class="mt-1.5 flex items-baseline justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
-                  <span class="text-sm font-bold text-slate-800 truncate">${safeMenu}</span>
-                  <span class="text-sm font-extrabold text-brand-600 shrink-0">${safePrice}</span>
-                </div>
-              </div>
-
-              <div class="mb-3.5 p-3 rounded-xl bg-amber-50/60 border border-amber-100/90">
-                <div class="text-[11px] font-bold text-amber-800 mb-1 flex items-center gap-1">
-                  <span>💡 AI 추천 근거</span>
-                </div>
-                <p class="text-xs text-slate-700 leading-relaxed">
-                  ${safeReason}
-                </p>
-              </div>
-
-              <div class="grid grid-cols-2 gap-2">
-                <a
-                  href="${escapeHtml(baeminUrl)}"
-                  class="inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-baemin hover:opacity-90 text-white text-xs font-extrabold shadow-sm transition-opacity"
-                >
-                  <i data-lucide="shopping-bag" class="w-3.5 h-3.5"></i>
-                  <span>배민으로 주문</span>
-                </a>
-                <a
-                  href="${escapeHtml(kakaoUrl)}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-kakao hover:brightness-95 text-slate-900 text-xs font-extrabold shadow-sm transition-all"
-                >
-                  <i data-lucide="navigation" class="w-3.5 h-3.5"></i>
-                  <span>카카오맵 길찾기</span>
-                </a>
-              </div>
-            </article>
-          `;
-        })
-        .join("");
-
+      renderCurrentRerollSlice();
       showOnlyView("resultView");
       refreshIcons();
     }
 
-    document.addEventListener("DOMContentLoaded", () => {
+    document.addEventListener("DOMContentLoaded", async () => {
+      updateStep3OptionsForMode();
+      updateLocationText();
       refreshIcons();
-      loadInitialWeather();
+      loadInitialContext();
+
+      // 모바일 GPS 기기이면서 이미 위치 권한이 허용된 경우에만 자동 고정밀 GPS 재측정 시도
+      // (PC 브라우저는 IP 기반 오차가 크므로 반드시 모달 확인/직접 지정을 거치도록 유지)
+      if (isMobileGpsDevice() && navigator.permissions && navigator.permissions.query) {
+        try {
+          const perm = await navigator.permissions.query({ name: "geolocation" });
+          if (perm.state === "granted") {
+            startWithHighAccuracyGps();
+          }
+        } catch (_) {
+          // permissions API 미지원 브라우저는 모달 버튼 클릭 유도 유지
+        }
+      }
     });
   </script>
 </body>
