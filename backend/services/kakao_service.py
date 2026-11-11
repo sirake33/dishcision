@@ -1053,6 +1053,9 @@ def get_menu_emoji(
 
 NAVER_MOBILE_SEARCH_URL = "https://m.search.naver.com/search.naver"
 
+_NAVER_SPECIAL_CHARS_RE = re.compile(r"[&+·ㆍ•・/|,\-_~()\[\]{}]+")
+_NAVER_REGION_SUFFIX_RE = re.compile(r"[가-힣]+[0-9]*(?:시|군|구|읍|면|동|리|가)$")
+
 _NON_BRANCH_DOT_SUFFIXES = (
     "반점",
     "과자점",
@@ -1134,24 +1137,72 @@ def _has_branch_or_region_name(
     return False
 
 
+def _is_branch_token(token: str) -> bool:
+    """단독 토큰이 지점명('봉담점', '수원대점', '본점', '직영점', '2호점' 등)인지 판별합니다."""
+    if not token or not token.endswith("점") or len(token) < 2:
+        return False
+    return not any(token.endswith(suffix) for suffix in _NON_BRANCH_DOT_SUFFIXES)
+
+
+def _sanitize_naver_store_name(store_name: str) -> str:
+    """
+    상호명 내 특수문자(&, +, · 등)를 공백으로 치환하고,
+    3단어 이상 복합(샵인샵) 상호는 핵심 매장명과 지점명 위주로 정제합니다.
+    """
+    cleaned = _NAVER_SPECIAL_CHARS_RE.sub(" ", str(store_name or ""))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return ""
+
+    tokens = cleaned.split()
+    if len(tokens) < 3:
+        return cleaned
+
+    branch_idx = next(
+        (i for i in range(len(tokens) - 1, 0, -1) if _is_branch_token(tokens[i])),
+        None,
+    )
+    if branch_idx is not None:
+        needs_two_word_core = (
+            len(tokens[0]) == 1
+            or (len(tokens[0]) >= 2 and tokens[branch_idx].startswith(tokens[0]))
+        )
+        core = f"{tokens[0]} {tokens[1]}" if needs_two_word_core and branch_idx >= 2 else tokens[0]
+        return f"{core} {tokens[branch_idx]}"
+
+    region_idx = next(
+        (
+            i
+            for i in range(len(tokens) - 1, 0, -1)
+            if _NAVER_REGION_SUFFIX_RE.match(tokens[i])
+        ),
+        None,
+    )
+    if region_idx is not None and region_idx >= 2:
+        core = f"{tokens[0]} {tokens[1]}" if len(tokens[0]) == 1 else tokens[0]
+        return f"{core} {tokens[region_idx]}"
+
+    return f"{tokens[0]} {tokens[1]}"
+
+
 def _build_naver_search_query(store_name: str, address_name: str = "") -> str:
-    """지점명·지역명 여부에 따라 '{clean_store_name} 리뷰' 또는 '{dong_name} {clean_store_name} 리뷰' 검색어를 생성합니다."""
-    clean_store = re.sub(r"\s+", " ", str(store_name or "")).strip()
+    """지점명·지역명 여부에 따라 정제된 '{clean_store}' 또는 '{dong_name} {clean_store}' 검색어를 생성합니다."""
+    clean_store = _sanitize_naver_store_name(store_name)
     if not clean_store:
         return ""
     dong_name = _extract_admin_dong(address_name)
     if not dong_name or _has_branch_or_region_name(
         clean_store, dong_name=dong_name, address_name=address_name
     ):
-        return f"{clean_store} 리뷰"
-    return f"{dong_name} {clean_store} 리뷰"
+        return clean_store
+    return f"{dong_name} {clean_store}"
 
 
 def resolve_naver_review_url(store_name: str, address_name: str = "") -> str:
     """
     네이버 포털 모바일 검색(`m.search.naver.com`) URL을 생성합니다.
     스마트플레이스 홈 카드(방문자 리뷰·별점·사진·메뉴)가 상단에 즉시 노출되도록
-    지점명/지역명 포함 여부에 따라 검색어를 최적화합니다.
+    특수문자 정제 및 복합 상호 축약 후 순수 상호명 위주로 검색어를 최적화합니다.
     """
     query_text = _build_naver_search_query(store_name, address_name=address_name)
     if not query_text:

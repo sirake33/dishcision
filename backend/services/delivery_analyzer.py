@@ -2,6 +2,8 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
+from backend.services.kakao_service import resolve_naver_review_url
+
 # 브랜드/업종별 실제 쿠팡이츠 최소주문금액 기준 및 실판매 대표 사이드/토핑 메뉴 목록 (원)
 BRAND_DELIVERY_PROFILES: List[Tuple[Tuple[str, ...], int, List[Tuple[str, int]]]] = [
     (
@@ -287,53 +289,13 @@ def build_delivery_deep_links(
     place_name: str, dong_name: str = ""
 ) -> Dict[str, str]:
     """
-    쿠팡이츠 모바일 앱 스킴(`coupangeats://`), 네이버 포털 모바일 검색(`m.search.naver.com`) 리뷰 URL 및 검색용 상호명을 생성합니다.
+    쿠팡이츠 모바일 앱 스킴(`coupangeats://`), 정제된 네이버 포털 모바일 검색(`m.search.naver.com`) URL 및 검색용 상호명을 생성합니다.
     """
     clean_name = clean_store_search_name(place_name)
     encoded_name = quote(clean_name)
-    clean_dong = re.sub(r"\s+", " ", str(dong_name or "")).strip()
-    dong_stem = re.sub(r"[0-9]*(?:읍|면|동|리|가)$", "", clean_dong)
-    tokens = clean_name.split()
-    last_token = tokens[-1] if tokens else ""
-    non_branch_words = (
-        "반점",
-        "과자점",
-        "정육점",
-        "문구점",
-        "복권방",
-        "음식점",
-        "전문점",
-        "할인점",
-        "편의점",
-        "면세점",
-        "백화점",
-    )
-    has_region = bool(clean_dong and clean_dong in clean_name) or bool(
-        len(dong_stem) >= 2 and re.search(rf"(?:^|\s){re.escape(dong_stem)}", clean_name)
-    )
-    has_branch = (
-        has_region
-        or (
-            len(tokens) >= 2
-            and last_token.endswith("점")
-            and not any(last_token.endswith(s) for s in non_branch_words)
-        )
-        or (
-            clean_name.endswith("점")
-            and len(clean_name) > 3
-            and not any(last_token.endswith(s) for s in non_branch_words)
-            and bool(re.search(r"(?:본점|직영점|[0-9]+호점|[가-힣0-9]+(?:역|대|호|본)점)$", clean_name))
-        )
-    )
-    search_query_text = (
-        f"{clean_name} 리뷰"
-        if (not clean_dong or has_branch)
-        else f"{clean_dong} {clean_name} 리뷰".strip()
-    )
-    query_str = quote(search_query_text)
 
     coupang_eats_url = f"coupangeats://search?keyword={encoded_name}"
-    naver_review_url = f"https://m.search.naver.com/search.naver?query={query_str}"
+    naver_review_url = resolve_naver_review_url(clean_name, address_name=dong_name)
     return {
         "clean_store_name": clean_name,
         "coupang_eats_url": coupang_eats_url,

@@ -1453,8 +1453,71 @@
       }
     }
 
+    const NAVER_NON_BRANCH_SUFFIXES = [
+      "반점",
+      "과자점",
+      "정육점",
+      "문구점",
+      "복권방",
+      "음식점",
+      "전문점",
+      "편의점",
+      "할인점",
+      "백화점",
+      "면세점",
+    ];
+
+    function isNaverBranchToken(token) {
+      if (!token || !token.endsWith("점") || token.length < 2) return false;
+      return !NAVER_NON_BRANCH_SUFFIXES.some((sfx) => token.endsWith(sfx));
+    }
+
+    function sanitizeStoreNameForNaver(storeName) {
+      const cleaned = String(storeName || "")
+        .replace(/[&+·ㆍ•・/|,\-_~()\[\]{}]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!cleaned) return "";
+
+      const tokens = cleaned.split(" ");
+      if (tokens.length < 3) return cleaned;
+
+      let branchIdx = -1;
+      for (let i = tokens.length - 1; i >= 1; i -= 1) {
+        if (isNaverBranchToken(tokens[i])) {
+          branchIdx = i;
+          break;
+        }
+      }
+      if (branchIdx !== -1) {
+        const needsTwoWordCore =
+          tokens[0].length === 1 ||
+          (tokens[0].length >= 2 && tokens[branchIdx].startsWith(tokens[0]));
+        const core =
+          needsTwoWordCore && branchIdx >= 2
+            ? `${tokens[0]} ${tokens[1]}`
+            : tokens[0];
+        return `${core} ${tokens[branchIdx]}`;
+      }
+
+      const regionSuffixRegex = /^[가-힣]+[0-9]*(?:시|군|구|읍|면|동|리|가)$/;
+      let regionIdx = -1;
+      for (let i = tokens.length - 1; i >= 1; i -= 1) {
+        if (regionSuffixRegex.test(tokens[i])) {
+          regionIdx = i;
+          break;
+        }
+      }
+      if (regionIdx >= 2) {
+        const core = tokens[0].length === 1 ? `${tokens[0]} ${tokens[1]}` : tokens[0];
+        return `${core} ${tokens[regionIdx]}`;
+      }
+
+      return `${tokens[0]} ${tokens[1]}`;
+    }
+
     function buildLocalityStoreQuery(storeName) {
-      const cleanName = String(storeName || "").trim().replace(/\s+/g, " ");
+      const cleanName = sanitizeStoreNameForNaver(storeName);
       if (!cleanName) return "";
       const rawAddr = String(state.address_name || "").trim();
       const primaryTokens = rawAddr.match(/[가-힣]+[0-9]*(?:읍|면|동)(?=\s|$)/g);
@@ -1476,22 +1539,9 @@
         (dongName && cleanName.includes(dongName)) ||
         regionTokens.some((term) => new RegExp(`(?:^|\\s)${term}`).test(cleanName));
 
-      const nonBranchSuffixes = [
-        "반점",
-        "과자점",
-        "정육점",
-        "문구점",
-        "복권방",
-        "음식점",
-        "전문점",
-        "편의점",
-        "할인점",
-        "백화점",
-        "면세점",
-      ];
       const tokens = cleanName.split(" ");
       const lastToken = tokens[tokens.length - 1] || "";
-      const isNonBranch = nonBranchSuffixes.some((sfx) => lastToken.endsWith(sfx));
+      const isNonBranch = NAVER_NON_BRANCH_SUFFIXES.some((sfx) => lastToken.endsWith(sfx));
       const dongStem = dongName.replace(/[0-9]*(?:읍|면|동|리|가)$/, "");
       const hasBranch =
         (tokens.length >= 2 && lastToken.endsWith("점") && !isNonBranch) ||
@@ -1512,12 +1562,10 @@
       if (!cleanName) return;
 
       const encodedName = encodeURIComponent(cleanName);
-      const encodedSearchQuery = encodeURIComponent(`${buildLocalityStoreQuery(cleanName)} 리뷰`);
+      const encodedSearchQuery = encodeURIComponent(buildLocalityStoreQuery(cleanName));
       const deepLink = customDeepLink || `coupangeats://search?keyword=${encodedName}`;
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      const webSearchUrl = isMobile
-        ? `https://m.search.naver.com/search.naver?query=${encodedSearchQuery}`
-        : `https://search.naver.com/search.naver?query=${encodedSearchQuery}`;
+      const webSearchUrl = `https://m.search.naver.com/search.naver?query=${encodedSearchQuery}`;
 
       lastAssistedStore = cleanName;
       const copyPromise = copyTextQuietly(cleanName);
@@ -1812,7 +1860,7 @@
       const safeKakaoUrl = escapeHtml(kakaoUrl);
       const naverReviewUrl =
         item.naver_review_url ||
-        `https://m.search.naver.com/search.naver?query=${encodeURIComponent(`${buildLocalityStoreQuery(cleanStoreName)} 리뷰`)}`;
+        `https://m.search.naver.com/search.naver?query=${encodeURIComponent(buildLocalityStoreQuery(cleanStoreName))}`;
       const safeNaverReviewUrl = escapeHtml(naverReviewUrl);
 
       const spec = item.delivery_spec || null;
