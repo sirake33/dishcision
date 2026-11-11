@@ -45,7 +45,7 @@ class AIAnalysisReport(BaseModel):
     )
     why_this_spot: str = Field(
         ...,
-        description="가짜 % 수치나 미실측 무게·정량 단정('몇 g 더 많음', '정량 비율 우수' 등) 없이 실제 방문자 리뷰 경향과 조리 특성을 바탕으로 사용자가 체감할 수 있는 실질적 만족 포인트 1~2줄 (selection_logic과 논리·어휘 중복 금지)",
+        description="타 매장이나 타 업종과의 비교 문구('인근 분식류 대비', '인근 백반 대비', '~대비' 등) 및 가짜 %·미실측 중량 단정 전면 금지. 오직 이 식당 메뉴 자체의 조리 정성, 재료의 신선함, 식감과 육수의 깊이 등 해당 음식 본연의 완성도와 매력을 담백하고 신뢰감 있게 서술한 1~2문장 (selection_logic과 논리·어휘 중복 금지)",
     )
     protein_dv_percent: int = Field(
         ...,
