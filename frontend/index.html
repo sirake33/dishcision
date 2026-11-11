@@ -1720,6 +1720,37 @@
             : "bg-amber-50/75 border-amber-100";
       const safeComaDesc = escapeHtml(report.food_coma_desc || "");
       const safeSelectionLogic = escapeHtml(report.selection_logic || "");
+      const rawProteinDv = Number(report.protein_dv_percent);
+      const proteinDvPercent =
+        Number.isFinite(rawProteinDv) && rawProteinDv >= 0
+          ? Math.round(rawProteinDv)
+          : Math.round((protein / 55) * 100);
+      const safeDinnerPairing = escapeHtml(report.dinner_pairing_guide || "");
+      const isRefreshPersona =
+        item.persona_type === "refresh" ||
+        String(item.category_persona || "").includes("반전") ||
+        String(item.category_persona || "").includes("리프레시");
+      const selectionLogicBoxHtml = isRefreshPersona
+        ? `
+          <div class="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200/80 text-emerald-950 text-xs">
+            <p class="font-bold mb-1 flex items-center gap-1 text-emerald-700"><span>✨ 반전 매력 선정 이유</span></p>
+            <p class="leading-relaxed font-medium">${safeSelectionLogic}</p>
+          </div>
+        `
+        : `
+          <div class="p-3 rounded-xl bg-orange-50/80 border border-orange-200/80 text-orange-950 text-xs">
+            <p class="font-bold mb-1 flex items-center gap-1 text-orange-700"><span>🎯 확신의 픽 선정 이유</span></p>
+            <p class="leading-relaxed font-medium">${safeSelectionLogic}</p>
+          </div>
+        `;
+      const dinnerPairingBoxHtml = safeDinnerPairing
+        ? `
+          <div class="p-3 rounded-xl bg-indigo-50/60 border border-indigo-100 text-xs">
+            <p class="font-bold text-indigo-900 mb-1 flex items-center gap-1"><span>🌙 이 메뉴를 선택할 시, 저녁 식단 밸런스</span></p>
+            <p class="text-indigo-950 leading-relaxed font-medium">${safeDinnerPairing}</p>
+          </div>
+        `
+        : "";
       const safeCoupangUrl = escapeHtml(
         item.coupang_eats_url || `coupangeats://search?keyword=${encodeURIComponent(cleanStoreName)}`
       );
@@ -1885,6 +1916,11 @@
             <p class="text-[10.5px] text-slate-700 leading-snug font-medium">
               🥗 ${safeNutHighlight}
             </p>
+            <div class="mt-1 flex items-center justify-start">
+              <span class="text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                식약처 기준 1일 단백질의 ${proteinDvPercent}% 충족
+              </span>
+            </div>
           </div>
 
           <!-- 아코디언 토글 버튼 (MenuFit 시그니처 AI 리포트 강조) -->
@@ -1933,12 +1969,9 @@
                 </p>
               </div>
 
-              <div class="p-2.5 rounded-xl bg-amber-50/65 border border-amber-100">
-                <div class="text-[11px] font-extrabold text-amber-950 mb-0.5">
-                  ⚖️ 선정 이유
-                </div>
-                <p class="text-xs text-slate-700 leading-relaxed font-medium">${safeSelectionLogic}</p>
-              </div>
+              ${selectionLogicBoxHtml}
+
+              ${dinnerPairingBoxHtml}
             </div>
           </div>
 

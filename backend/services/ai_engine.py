@@ -784,6 +784,48 @@ def _score_refresh_restaurant(
     return score
 
 
+def _compute_protein_dv_percent(protein_g: int) -> int:
+    """식약처 성인 1일 단백질 권장량(55g) 기준 충족률(%)을 수학적으로 계산합니다."""
+    return int(round(max(0, int(protein_g or 0)) / 55 * 100))
+
+
+def _build_dinner_pairing_guide(
+    nutrition: NutritionFacts,
+    menu_name: str,
+    preference: UserPreferenceRequest,
+) -> str:
+    """선택 전 사전 예측 시뮬레이션 톤으로 하루 24시간 영양 균형을 맞추는 저녁 식단 가이드를 생성합니다."""
+    is_group = preference.budget_tier == "generous_group"
+    per_cal = (
+        int(nutrition.calories_per_person)
+        if nutrition.calories_per_person
+        else (round(nutrition.calories / 2) if is_group else int(nutrition.calories))
+    )
+    per_carbs = round(nutrition.carbs_g / 2) if is_group else int(nutrition.carbs_g)
+    per_protein = round(nutrition.protein_g / 2) if is_group else int(nutrition.protein_g)
+    per_fat = round(nutrition.fat_g / 2) if is_group else int(nutrition.fat_g)
+
+    if per_carbs >= 82 or per_cal >= 840:
+        return (
+            "만약 오늘 점심으로 이 메뉴를 선택하신다면, 탄수화물과 열량이 넉넉한 편이므로 하루 영양 균형을 위해 "
+            "오늘 저녁은 닭가슴살·연두부·구운 생선과 잎채소 샐러드 위주로 가볍게 드시는 것을 추천합니다."
+        )
+    if per_cal <= 500 or per_carbs <= 48:
+        return (
+            "만약 오늘 점심으로 이 메뉴를 선택하신다면, 열량과 탄수화물 부담이 적은 편이므로 하루 영양 균형을 위해 "
+            "오늘 저녁은 현미밥·된장찌개·소불고기 또는 연어 덮밥처럼 복합당과 단백질이 어우러진 식단으로 든든하게 드시는 것을 추천합니다."
+        )
+    if per_protein >= 34 and per_fat >= 26:
+        return (
+            "만약 오늘 점심으로 이 메뉴를 선택하신다면, 단백질과 지방을 충분히 채우는 구성이므로 하루 영양 균형을 위해 "
+            "오늘 저녁은 맑은 채소 샤브샤브·나물 비빔밥처럼 기름기를 덜어내고 식이섬유를 보충하는 담백한 식단으로 가볍게 드시는 것을 추천합니다."
+        )
+    return (
+        "만약 오늘 점심으로 이 메뉴를 선택하신다면, 탄단지 균형이 비교적 고르게 잡혀 있으므로 하루 영양 균형을 위해 "
+        "오늘 저녁은 데친 채소·미역국에 계란이나 흰살생선 반찬을 곁들여 나트륨을 낮추고 가볍게 마무리하시는 것을 추천합니다."
+    )
+
+
 def _diagnose_food_coma(
     nutrition: NutritionFacts, preference: UserPreferenceRequest
 ) -> tuple[str, str]:
@@ -948,13 +990,18 @@ def _build_fallback_report(
     if _is_meal_kit_store(restaurant, menu_name) and MEAL_KIT_NOTICE not in selection_logic:
         selection_logic = f"{MEAL_KIT_NOTICE}. {selection_logic}"
 
+    protein_dv = _compute_protein_dv_percent(nutrition.protein_g)
+    dinner_guide = _build_dinner_pairing_guide(nutrition, menu_name, preference)
+
     return AIAnalysisReport(
         review_keywords=keywords,
         visitor_review_summary=review_summary,
         why_this_spot=why_this_spot,
+        protein_dv_percent=protein_dv,
         food_coma_status=coma_status,
         food_coma_desc=coma_desc,
         selection_logic=selection_logic,
+        dinner_pairing_guide=dinner_guide,
     )
 
 
@@ -1008,13 +1055,27 @@ def _sanitize_report(
     if _is_meal_kit_store(restaurant, menu_name) and MEAL_KIT_NOTICE not in selection_logic:
         selection_logic = f"{MEAL_KIT_NOTICE}. {selection_logic}"
 
+    protein_dv = _compute_protein_dv_percent(nutrition.protein_g)
+    dinner_guide = str(getattr(raw_report, "dinner_pairing_guide", "") or "").strip()
+    dinner_guide = re.sub(r"\s*\(\s*(?:약\s*)?\d+(?:\.\d+)?\s*%\s*\)", "", dinner_guide).strip()
+    has_past_tense = bool(
+        re.search(
+            r"(?:먹었으니|드셨으니|섭취했으니|드셨으므로|먹었으므로|골랐으니|드셨기|먹었기|선택했으니|선택하셨으니|드셨다면|먹었다면)",
+            dinner_guide,
+        )
+    )
+    if not dinner_guide or has_past_tense or re.search(r"\d+(?:\.\d+)?\s*%", dinner_guide):
+        dinner_guide = fallback.dinner_pairing_guide
+
     return AIAnalysisReport(
         review_keywords=keywords,
         visitor_review_summary=summary,
         why_this_spot=why_spot,
+        protein_dv_percent=protein_dv,
         food_coma_status=coma_status,
         food_coma_desc=coma_desc,
         selection_logic=selection_logic,
+        dinner_pairing_guide=dinner_guide,
     )
 
 
@@ -1552,16 +1613,18 @@ def generate_recommendations(
    - `nutrition_highlight`: 선택한 식감/모드 기준 탄단지 균형 분석을 핵심 1줄로 작성하세요.
 6. `report` (`AIAnalysisReport`) 초정밀 추천 근거 리포트 작성 규칙 (상투적 날씨/꿀팁/동선 클리셰 및 거짓 수치·인용구 전면 폐기):
    - 금지: "쌀쌀한 날씨에 어울립니다", "따뜻하게 드세요", "맛있게 비벼 드세요", "도보 이동이 편합니다", "(경기도 화성시...)" 행정동 주소 반복, 거리/시간 숫자 나열, 증명 불가능한 가짜 퍼센트 숫자('(94%)', '(89%)' 등 어떠한 % 수치도 절대 생성 금지), 실제 방문자 인용처럼 꾸민 따옴표("...") 문장.
-   - 반드시 아래 6개 필드를 정직하고 날카로운 **팩트·실데이터·비교 우위** 중심으로 채우세요:
+   - 반드시 아래 8개 필드를 정직하고 날카로운 **팩트·실데이터·비교 우위** 중심으로 채우세요:
      1) `review_keywords`: 해당 매장/메뉴에서 실제 방문자들이 주로 칭찬하는 핵심 매력 해시태그 정확히 3개 (예: `["#불향가득_직화", "#푸짐한_고기양", "#혼밥편함"]`).
      2) `visitor_review_summary`: 따옴표("...") 인용구 없이, 방문자 평가를 종합한 AI 총평임을 알 수 있도록 `~라는 평가가 지배적이며 실사용 만족도가 높습니다` 형태로 정직한 1줄 요약을 작성하세요 (단, 문두의 `"방문자 리뷰 종합 요약:"` 라벨은 UI에서 붙이므로 라벨 없이 본문만 작성).
      3) `why_this_spot`: `(94%)`, `(89%)` 같은 가짜 퍼센트 숫자를 절대 지어내지 말고, 위 후보 목록(총 {len(candidate_restaurants)}곳)의 인근 동종 매장들과 비교했을 때 이 매장이 돋보이는 이유를 실제 팩트 기반 서술형으로 정직하게 1~2줄 작성 (예: `"반경 1km 내 동종 매장 중 방문자 리뷰에서 '포장 위생 및 보온성'과 '고기 반찬의 퀄리티'에 대한 칭찬이 가장 집중된 매장"`).
-     4) `food_coma_status`: 방금 추정한 `nutrition`의 탄수화물·단백질 비율과 칼로리를 분석해 식후 혈당 스파이크 및 식곤증 위험도를 `"안전"`, `"적정"`, `"주의"` 중 하나로 정확히 판정.
-     5) `food_coma_desc`: 탄단지 비율과 혈당 반응 근거로 오후 업무·학업 집중력이 몇 시까지 어떻게 유지되는지 과학적 1줄 예측 (예: `"고단백·복합당질 구성으로 급격한 혈당 스파이크 없이 오후 5시까지 집중력을 유지합니다."`).
-     6) `selection_logic`:
+     4) `protein_dv_percent`: 위 `nutrition.protein_g`를 식약처 성인 1일 단백질 권장량(55g)으로 나눈 충족률 정수 `round(protein_g / 55 * 100)` (백엔드에서도 최종 수치로 검증·보정).
+     5) `food_coma_status`: 방금 추정한 `nutrition`의 탄수화물·단백질 비율과 칼로리를 분석해 식후 혈당 스파이크 및 식곤증 위험도를 `"안전"`, `"적정"`, `"주의"` 중 하나로 정확히 판정.
+     6) `food_coma_desc`: 탄단지 비율과 혈당 반응 근거로 오후 업무·학업 집중력이 몇 시까지 어떻게 유지되는지 과학적 1줄 예측 (예: `"고단백·복합당질 구성으로 급격한 혈당 스파이크 없이 오후 5시까지 집중력을 유지합니다."`).
+     7) `selection_logic`:
         - `standards` (`[확신의 픽]`): 사용자의 3-Tap 욕구(`{texture_desc}`, `{meal_desc}`, `{budget_desc}`)에 100% 부합하는 실패 없는 명쾌한 이유 1줄.
         - `refreshes` (`[반전 매력 픽]`): 왜 선택한 `{texture_desc}` 대신 이 대안 메뉴(`recommended_menu`)를 제안했는지 고개가 끄덕여지는 신선한 반전 논리 1줄.
         - 비조리 밀키트 매장일 경우 반드시 `selection_logic`에 `"⚠️ 냄비 조리가 필요한 밀키트 구성입니다"`를 명시하세요.
+     8) `dinner_pairing_guide`: 절대 과거형 단정("점심에 이걸 먹었으니...")을 쓰지 말고, **"만약 오늘 점심으로 이 메뉴를 선택하신다면, 하루 영양 균형을 위해 오늘 저녁은 ~ 위주로 가볍게/든든하게 드시는 것을 추천합니다"**라는 선택 전 사전 예측 시뮬레이션 톤으로 1~2줄 서술하세요 (예: 탄수화물·지방 비중이 높다면 저녁 저탄수 고단백 채소식 권장, 가벼운 클린식이라면 저녁 복합당·단백질 보충 권장).
 """
 
     try:

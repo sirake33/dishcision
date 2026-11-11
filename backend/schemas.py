@@ -47,6 +47,10 @@ class AIAnalysisReport(BaseModel):
         ...,
         description="임의의 퍼센트(%) 숫자 없이 주변 인근 동종 식당들과 비교한 팩트 중심 서술형 우위 1~2줄",
     )
+    protein_dv_percent: int = Field(
+        ...,
+        description="식약처 성인 1일 단백질 권장량 55g 기준 충족률(%) 정수 (백엔드가 protein_g 기반으로 round(protein_g/55*100) 수학 재계산)",
+    )
     food_coma_status: str = Field(
         ..., description="탄단지 비율 기반 식곤증 위험도 진단 ('안전', '적정', '주의')"
     )
@@ -57,6 +61,10 @@ class AIAnalysisReport(BaseModel):
     selection_logic: str = Field(
         ...,
         description="확신의 픽 또는 반전 매력 픽으로 선정된 명쾌한 해설 1줄",
+    )
+    dinner_pairing_guide: str = Field(
+        ...,
+        description="만약 오늘 점심으로 이 메뉴를 선택할 시 하루 24시간 영양 균형을 완성하기 위한 저녁 식단 예측 시뮬레이션 가이드 1~2줄 (과거형 절대 금지)",
     )
 
 
