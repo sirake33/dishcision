@@ -34,6 +34,31 @@ class NutritionFacts(BaseModel):
     nutrition_highlight: str = Field(..., description="탄단지 영양 밸런스 분석 1줄")
 
 
+class AIAnalysisReport(BaseModel):
+    review_keywords: List[str] = Field(
+        ...,
+        description="방문자 실제 칭찬 키워드 해시태그 3개 (예: ['#불향가득_직화', '#푸짐한_고기양', '#혼밥편함'])",
+    )
+    visitor_review_summary: str = Field(
+        ..., description="방문자들의 대표적인 1줄 요약평"
+    )
+    why_this_spot: str = Field(
+        ...,
+        description="주변 인근 동종 식당들과의 비교 우위 팩트 1~2줄",
+    )
+    food_coma_status: str = Field(
+        ..., description="탄단지 비율 기반 식곤증 위험도 진단 ('안전', '적정', '주의')"
+    )
+    food_coma_desc: str = Field(
+        ...,
+        description="탄단지 밸런스 기반의 오후 식곤증/집중력 유지 예측 1줄",
+    )
+    selection_logic: str = Field(
+        ...,
+        description="확신의 픽 또는 반전 매력 픽으로 선정된 명쾌한 해설 1줄",
+    )
+
+
 # Gemini 3.8 Flash가 추론할 내부 구조 (식당명/거리는 AI가 직접 쓰지 않고 index로 선택)
 class AISelectionItem(BaseModel):
     selected_index: int = Field(..., description="제공된 식당 후보군 리스트의 인덱스 번호")
@@ -47,9 +72,7 @@ class AISelectionItem(BaseModel):
     recommended_menu: str = Field(..., description="추천 대표 메뉴명")
     estimated_price: str = Field(..., description="예상 가격 (예: 9,500원)")
     nutrition: NutritionFacts
-    weather_fit: str = Field(..., description="기상 환경 분석 1줄")
-    pro_tip: str = Field(..., description="주문 꿀조합 팁 1줄")
-    time_efficiency: str = Field(..., description="시간 및 동선 효율 분석 1줄")
+    report: AIAnalysisReport
 
 
 class AISelectionResponse(BaseModel):
@@ -85,9 +108,7 @@ class RecommendationItem(BaseModel):
     distance_display: str
     emoji: str = Field(..., description="푸드 이모지 엠블럼")
     nutrition: NutritionFacts
-    weather_fit: str
-    pro_tip: str
-    time_efficiency: str
+    report: AIAnalysisReport
     is_meal_kit: bool = Field(
         default=False,
         description="땅스부대찌개, 담꾹 등 가스레인지/냄비 조리가 필요한 매장이면 True",

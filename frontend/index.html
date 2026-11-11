@@ -1648,7 +1648,7 @@
         if (btnEl) btnEl.setAttribute("aria-expanded", "true");
       } else {
         panelEl.classList.add("hidden");
-        textEl.textContent = "🔍 AI 맞춤 분석 리포트 보기 (날씨·꿀팁·동선) ▼";
+        textEl.textContent = "🔍 AI 추천 근거 리포트 보기 (리뷰·식곤증·비교우위) ▼";
         if (btnEl) btnEl.setAttribute("aria-expanded", "false");
       }
     }
@@ -1688,15 +1688,41 @@
       const safeBadgeLabel = escapeHtml(style.badgeLabel);
       const safeEmoji = escapeHtml(item.emoji || "🍽️");
       const safeNutHighlight = escapeHtml(nut.nutrition_highlight || "");
-      const safeWeatherFit = escapeHtml(item.weather_fit || "");
-      const safeProTip = escapeHtml(item.pro_tip || "");
-      const safeTimeEff = escapeHtml(item.time_efficiency || "");
+      const report = item.report || {};
+      const reviewKeywords = Array.isArray(report.review_keywords)
+        ? report.review_keywords.slice(0, 3)
+        : [];
+      const reviewKeywordsHtml = reviewKeywords
+        .map(
+          (k) =>
+            `<span class="bg-amber-50 text-amber-800 border border-amber-200/70 text-[11px] px-2 py-0.5 rounded-md font-semibold">${escapeHtml(k)}</span>`
+        )
+        .join("");
+      const safeReviewSummary = escapeHtml(report.visitor_review_summary || "");
+      const safeWhyThisSpot = escapeHtml(report.why_this_spot || "");
+      const rawComaStatus = String(report.food_coma_status || "적정").trim();
+      const safeComaStatus = escapeHtml(rawComaStatus);
+      const comaStatusColor =
+        rawComaStatus === "안전"
+          ? "text-emerald-600"
+          : rawComaStatus === "주의"
+            ? "text-rose-600"
+            : "text-amber-600";
+      const comaBoxStyle =
+        rawComaStatus === "안전"
+          ? "bg-emerald-50/75 border-emerald-100"
+          : rawComaStatus === "주의"
+            ? "bg-rose-50/75 border-rose-100"
+            : "bg-amber-50/75 border-amber-100";
+      const safeComaDesc = escapeHtml(report.food_coma_desc || "");
+      const safeSelectionLogic = escapeHtml(report.selection_logic || "");
       const safeCoupangUrl = escapeHtml(
         item.coupang_eats_url || `coupangeats://search?keyword=${encodeURIComponent(cleanStoreName)}`
       );
       const kakaoUrl =
         item.kakao_map_url ||
         `https://map.kakao.com/link/search/${encodeURIComponent(cleanStoreName)}`;
+      const safeKakaoUrl = escapeHtml(kakaoUrl);
 
       const spec = item.delivery_spec || null;
       const deliveryAnalysisHtml =
@@ -1747,38 +1773,43 @@
             })()
           : "";
 
+      const reviewLinkBtnHtml = `
+        <a
+          href="${safeKakaoUrl}"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shrink-0 whitespace-nowrap"
+        >
+          <span>💬 카카오 실제 리뷰</span>
+        </a>
+      `;
+
       const actionButtonsHtml = isDeliveryMode
         ? `
-          <div class="grid grid-cols-3 gap-1.5 mt-1.5">
+          <div class="flex items-center gap-1.5 mt-1.5">
             <button
               type="button"
               data-restaurant="${safeCleanName}"
               data-deeplink="${safeCoupangUrl}"
               onclick="openCoupangEats(this.dataset.restaurant, this.dataset.deeplink)"
-              class="col-span-2 inline-flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:brightness-105 active:scale-[0.99] text-white text-[11.5px] font-extrabold shadow-sm shadow-blue-500/20 transition-all"
+              class="flex-1 min-w-0 inline-flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:brightness-105 active:scale-[0.99] text-white text-xs font-extrabold shadow-sm shadow-blue-500/20 transition-all"
             >
               <span>🚀 쿠팡이츠 주문</span>
             </button>
-            <a
-              href="${escapeHtml(kakaoUrl)}"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="col-span-1 inline-flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-slate-700 text-[11.5px] font-extrabold transition-colors"
-            >
-              <span>📍 매장정보</span>
-            </a>
+            ${reviewLinkBtnHtml}
           </div>
         `
         : `
-          <div class="mt-1.5">
+          <div class="flex items-center gap-1.5 mt-1.5">
             <a
-              href="${escapeHtml(kakaoUrl)}"
+              href="${safeKakaoUrl}"
               target="_blank"
               rel="noopener noreferrer"
-              class="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-kakao hover:brightness-95 text-slate-900 text-xs font-extrabold shadow-sm transition-all"
+              class="flex-1 min-w-0 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-kakao hover:brightness-95 text-slate-900 text-xs font-extrabold shadow-sm transition-all"
             >
               <span>📍 카카오맵 길찾기</span>
             </a>
+            ${reviewLinkBtnHtml}
           </div>
         `;
 
@@ -1857,36 +1888,43 @@
             aria-controls="accordion-panel-${index}"
             class="w-full py-1 bg-slate-50 hover:bg-slate-100 text-[11px] font-semibold text-slate-600 rounded-xl flex items-center justify-center gap-1 my-1 transition"
           >
-            <span id="accordion-text-${index}">🔍 AI 맞춤 분석 리포트 보기 (날씨·꿀팁·동선) ▼</span>
+            <span id="accordion-text-${index}">🔍 AI 추천 근거 리포트 보기 (리뷰·식곤증·비교우위) ▼</span>
           </button>
 
-          <!-- 기상 · 꿀조합 · 동선 3단 인사이트 (기본 접힘 아코디언) -->
-          <div id="accordion-panel-${index}" class="hidden space-y-1.5 mb-1.5">
-            <div class="p-2 rounded-xl bg-sky-50/75 border border-sky-100">
-              <div class="text-[11px] font-extrabold text-sky-900 mb-0.5">
-                🌤️ 기상 환경 분석
-              </div>
-              <p class="text-[11px] text-slate-700 leading-relaxed">
-                ${safeWeatherFit}
-              </p>
+          <!-- 방문자 리뷰 마이닝 · 비교 우위 · 식곤증 방어 · 선정 이유 (기본 접힘 아코디언) -->
+          <div id="accordion-panel-${index}" class="hidden space-y-2 mb-1.5 pt-0.5">
+            <!-- 1. 방문자 리뷰 마이닝 영역 -->
+            <div>
+              <div class="flex flex-wrap gap-1.5 mb-1.5">${reviewKeywordsHtml}</div>
+              <p class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 italic">💬 "${safeReviewSummary}"</p>
             </div>
 
-            <div class="p-2 rounded-xl bg-amber-50/75 border border-amber-100">
-              <div class="text-[11px] font-extrabold text-amber-900 mb-0.5">
-                💡 주문 꿀조합 팁
+            <!-- 2. 3대 핵심 근거 박스 -->
+            <div class="space-y-1.5">
+              <div class="p-2.5 rounded-xl bg-indigo-50/65 border border-indigo-100">
+                <div class="text-[11px] font-extrabold text-indigo-950 mb-0.5">
+                  🎯 왜 이 식당인가 (비교 우위)
+                </div>
+                <p class="text-xs text-slate-700 leading-relaxed font-medium">${safeWhyThisSpot}</p>
               </div>
-              <p class="text-[11px] text-slate-700 leading-relaxed">
-                ${safeProTip}
-              </p>
-            </div>
 
-            <div class="p-2 rounded-xl bg-indigo-50/75 border border-indigo-100">
-              <div class="text-[11px] font-extrabold text-indigo-900 mb-0.5">
-                ⏱️ 동선 &amp; 방문 팁
+              <div class="p-2.5 rounded-xl border ${comaBoxStyle}">
+                <div class="text-[11px] font-extrabold text-slate-900 mb-0.5">
+                  ⚡ 식곤증 방어 지수
+                </div>
+                <p class="text-xs leading-relaxed">
+                  <span class="font-bold ${comaStatusColor}">${safeComaStatus}</span>
+                  <span class="text-slate-400 mx-0.5">·</span>
+                  <span class="text-xs text-slate-600">${safeComaDesc}</span>
+                </p>
               </div>
-              <p class="text-[11px] text-slate-700 leading-relaxed">
-                ${safeTimeEff}
-              </p>
+
+              <div class="p-2.5 rounded-xl bg-amber-50/65 border border-amber-100">
+                <div class="text-[11px] font-extrabold text-amber-950 mb-0.5">
+                  ⚖️ 선정 이유
+                </div>
+                <p class="text-xs text-slate-700 leading-relaxed font-medium">${safeSelectionLogic}</p>
+              </div>
             </div>
           </div>
 

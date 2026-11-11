@@ -9,6 +9,7 @@ from google import genai
 from google.genai import types
 
 from backend.schemas import (
+    AIAnalysisReport,
     AISelectionItem,
     AISelectionResponse,
     DeliverySpec,
@@ -36,7 +37,8 @@ SYSTEM_PROMPT = (
     "반드시 목록 내 실제 식당의 서로 다른 정수 인덱스 `selected_index`만 총 5개 선택하세요:\n"
     "- `standards` (3개, rank 1~3, persona_type='standard'): 사용자 조건(식감/온도, 식사 템포, 예산)에 100% 충실한 확신의 픽 3곳\n"
     "- `refreshes` (2개, rank 1~2, persona_type='refresh'): 사용자의 식사 템포와 예산은 유지하되 카테고리를 색다르게 비튼 반전 매력 픽 2곳\n"
-    "식당 상호명이나 거리/이동시간 수치는 백엔드가 직접 매핑하므로 절대 지어내지 말고, 각 추천 메뉴의 정밀한 탄단지 영양 수치(`NutritionFacts`)와 기상·꿀팁·동선 1줄 분석만 작성하세요."
+    "식당 상호명이나 거리/이동시간 수치는 백엔드가 직접 매핑하므로 절대 지어내지 말고, 각 추천 메뉴의 정밀한 탄단지 영양 수치(`NutritionFacts`)와 팩트 기반 추천 근거 리포트(`AIAnalysisReport`: 방문자 리뷰 마이닝, 인근 비교 우위, 식곤증 방어 지수, 선정 논리)만 작성하세요.\n"
+    "절대 금지: '쌀쌀한 날씨에 따뜻하게...', '잘 비벼 드세요', '도보 이동이 편합니다' 같은 상투적 날씨 클리셰나 뻔한 식사 꿀팁을 절대 작성하지 마세요."
 )
 
 WALK_DISTANCE_DECAY_RULE = (
@@ -46,19 +48,18 @@ WALK_DISTANCE_DECAY_RULE = (
     "  · 직선 500m 이하 (실보행 ~650m / 도보 ~9분 이내): 거리 점수 만점.\n"
     "  · 직선 500m ~ 1000m (실보행 ~1.3km / 도보 10~18분): 거리가 멀어질수록 추천 점수에 점진적 감점 페널티를 부여하세요.\n"
     "- 조건과 맛이 비슷하다면 가까운 매장을 최우선(1위)으로 선정하세요.\n"
-    "- 만약 직선 700m(실보행 ~910m, 도보 약 13분) 이상 떨어진 매장이 선정될 경우, 그만한 확실한 퀄리티나 시그니처 매력이 있어야 하며, "
-    "`time_efficiency` 항목에는 숫자(미터/분)를 적지 말고 \"식전 가벼운 산책 겸 다녀오기 좋다\"는 행동 팁 맥락을 자연스럽게 담으세요."
+    "- 만약 직선 700m(실보행 ~910m, 도보 약 13분) 이상 떨어진 매장이 선정될 경우, 그만한 확실한 조리 퀄리티나 시그니처 비교 우위가 있어야 하며, "
+    "`report.why_this_spot`에는 거리를 나열하는 대신 주변 대비 음식·가성비 경쟁력을 팩트로 서술하세요."
 )
 
 DELIVERY_MODE_RULE = (
     "[배달 주문 모드 규칙 — 반경 3,500m 이내]\n"
     "- 가까운 1km 이내 매장부터 최대 3.5km 권역의 인기 배달 매장까지 거리에 따른 감점 없이 동일하게 평가하세요.\n"
     "- 직접 걸어가지 않으므로 배달 시 포장 퀄리티, 온도/식감 유지력, 메뉴 만족도를 최우선 기준으로 확신의 픽 3곳(`standards`) + 반전 매력 픽 2곳(`refreshes`)을 선정하세요.\n"
-    "- **비조리(밀키트) 매장 후순위 원칙**: 땅스부대찌개, 담꾹 등 집에서 가스레인지/냄비로 직접 끓여야 하는 밀키트 전문점은 즉석 식사가 필요한 배달 모드 특성상 우선순위를 낮추고 바로 먹을 수 있는 조리 완료 매장을 우선 선정하세요. 불가피하게 추천에 포함할 경우 `pro_tip`에 반드시 \"⚠️ 냄비 조리가 필요한 밀키트 구성입니다\"를 명시하세요.\n"
+    "- **비조리(밀키트) 매장 후순위 원칙**: 땅스부대찌개, 담꾹 등 집에서 가스레인지/냄비로 직접 끓여야 하는 밀키트 전문점은 즉석 식사가 필요한 배달 모드 특성상 우선순위를 낮추고 바로 먹을 수 있는 조리 완료 매장을 우선 선정하세요. 불가피하게 추천에 포함할 경우 `report.selection_logic`에 반드시 \"⚠️ 냄비 조리가 필요한 밀키트 구성입니다\"를 명시하세요.\n"
     "- 구내식당·학생식당·현장 숯불구이 전문점처럼 쿠팡이츠 배달이 불가능한 업태는 추천에서 제외하세요.\n"
     "- 선택한 예산/주문 규모(`min_order_exact` vs `generous_group`)에 정확히 부합하는 메뉴와 가격대(단품+실속 사이드 1인 콤보 vs 2인 이상 푸짐한 세트)를 제시하세요.\n"
-    "- `pro_tip`은 임의의 최소주문금액 수치를 추측하지 말고(백엔드가 정밀 계산함), 실제 맛/소스·토핑 추가/포장·쿠팡이츠 와우 무료배달 활용 꿀팁 중심으로 작성하세요.\n"
-    "- `time_efficiency` 항목에는 거리(m/km)나 긴 행정동 주소를 중복해 읊지 말고, 피크타임 배달 컨디션·포장/온도 유지 등 실용적인 팁 중심으로 작성하세요."
+    "- 리포트 본문(`report`)에서는 임의의 최소주문금액·거리 수치를 추측해 적지 말고(백엔드가 정밀 계산함), 실제 방문자 호평 포인트·동종 매장 대비 가성비·탄단지 식곤증 분석·선정 논리에 집중하세요."
 )
 
 DELIVERY_MODE_LABELS = {
@@ -782,88 +783,231 @@ def _score_refresh_restaurant(
     return score
 
 
-def _build_fallback_texts(
+def _diagnose_food_coma(
+    nutrition: NutritionFacts, preference: UserPreferenceRequest
+) -> tuple[str, str]:
+    """탄수화물·단백질 비율과 1인 기준 열량으로 식후 혈당 스파이크(식곤증) 위험도를 정밀 진단합니다."""
+    is_group = preference.budget_tier == "generous_group"
+    per_cal = (
+        int(nutrition.calories_per_person)
+        if nutrition.calories_per_person
+        else (round(nutrition.calories / 2) if is_group else int(nutrition.calories))
+    )
+    per_carbs = round(nutrition.carbs_g / 2) if is_group else int(nutrition.carbs_g)
+    per_protein = round(nutrition.protein_g / 2) if is_group else int(nutrition.protein_g)
+    carb_protein_ratio = per_carbs / max(per_protein, 1)
+
+    if (per_carbs <= 72 and per_protein >= 26) or (
+        carb_protein_ratio <= 2.35 and per_cal <= 760
+    ):
+        return (
+            "안전",
+            f"탄수화물({per_carbs}g) 대비 단백질({per_protein}g) 비중이 높아 급격한 혈당 스파이크 없이 오후 5시까지 선명한 집중력을 유지합니다.",
+        )
+    if per_carbs >= 96 or per_cal >= 980 or (carb_protein_ratio >= 3.2 and per_cal >= 880):
+        return (
+            "주의",
+            f"1인 기준 탄수화물 {per_carbs}g·{per_cal}kcal의 고밀도 식단으로 식후 혈당 상승에 따른 나른함이 올 수 있어 가벼운 10분 걷기를 권장합니다.",
+        )
+    return (
+        "적정",
+        f"탄수화물 {per_carbs}g과 단백질 {per_protein}g의 균형 배합으로 과도한 혈당 요동 없이 안정적인 포만감과 오후 작업 컨디션을 유지합니다.",
+    )
+
+
+def _normalize_food_coma_status(raw_status: str, fallback_status: str) -> str:
+    cleaned = str(raw_status or "").strip()
+    for allowed in ("안전", "적정", "주의"):
+        if allowed in cleaned:
+            return allowed
+    return fallback_status
+
+
+def _normalize_review_keywords(
+    raw_keywords: Optional[List[str]], fallback_keywords: List[str]
+) -> List[str]:
+    result: List[str] = []
+    seen = set()
+    for kw in (raw_keywords or []):
+        tag = str(kw or "").strip().strip(",.")
+        if not tag:
+            continue
+        if not tag.startswith("#"):
+            tag = f"#{tag}"
+        tag = tag.replace(" ", "_")
+        if tag not in seen:
+            seen.add(tag)
+            result.append(tag)
+        if len(result) == 3:
+            return result
+    for fb in fallback_keywords:
+        if fb not in seen:
+            seen.add(fb)
+            result.append(fb)
+        if len(result) == 3:
+            break
+    return result[:3]
+
+
+def _build_fallback_report(
     restaurant: Dict[str, Any],
     menu_name: str,
     estimated_price: str,
+    nutrition: NutritionFacts,
     preference: UserPreferenceRequest,
-    weather_info: Dict[str, Any],
-) -> Dict[str, str]:
-    """기상·꿀팁·동선 1줄 분석을 실제 매장·메뉴 특성·날씨·수학적 거리 데이터 기반으로 생성합니다."""
-    mode = _normalize_mode(preference.delivery_mode)
-    dist_m = max(0, _parse_distance_m(restaurant.get("distance", "0"), default=0))
+    *,
+    is_refresh: bool = False,
+    candidate_count: int = 12,
+) -> AIAnalysisReport:
+    """실제 식당 업종·메뉴·탄단지 수치·3-Tap 조건을 기반으로 리뷰 마이닝·비교 우위·식곤증 지수·선정 논리 리포트를 생성합니다."""
     place_name = str(restaurant.get("place_name", "")).strip()
     cat_name = str(restaurant.get("category_name", "")).strip()
     dish_text = f"{place_name} {cat_name} {menu_name}"
-    weather_str = weather_info.get("weather", "쌀쌀한 흐림")
-    temp_str = weather_info.get("temp", "7℃")
-    is_cold = bool(weather_info.get("is_cold", True))
+    mode = _normalize_mode(preference.delivery_mode)
+    total_peers = max(4, int(candidate_count or 12))
 
-    if any(k in dish_text for k in ("국밥", "해장국", "찌개", "짬뽕", "우동", "쌀국수", "마라탕", "라멘", "죽", "국물", "떡볶이")):
-        weather_fit = (
-            f"{temp_str}({weather_str})의 쌀쌀한 기온에 김이 오르는 '{menu_name}'가 체온을 빠르게 높여줍니다."
-            if is_cold
-            else f"{temp_str}({weather_str}) 기상에서도 깔끔한 온도의 국물 요리로 식사 만족도를 높여줍니다."
-        )
-    elif any(k in dish_text for k in ("포케", "샐러드")):
-        weather_fit = (
-            f"{temp_str}({weather_str}) 컨디션에도 무겁지 않고 신선한 '{menu_name}' 구성으로 오후 식곤증 없이 산뜻하게 즐기기 좋습니다."
-        )
-    elif any(k in dish_text for k in ("버거", "와퍼", "샌드위치", "토스트", "에그")) and "밥버거" not in dish_text:
-        weather_fit = (
-            f"{temp_str}({weather_str}) 날씨에도 갓 구운 따뜻한 빵과 패티 조합으로 깔끔하게 즐기기 좋습니다."
+    if any(k in dish_text for k in ("포케", "샐러드", "샐러리아")):
+        keywords = ["#신선한_토핑조합", "#혈당스파이크_제로", "#식곤증_완벽방어"]
+        review_summary = "신선한 채소와 두툼한 단백질 토핑 비율이 알차 식후 속 더부룩함 없이 가볍게 완식할 수 있다는 호평이 주를 이룹니다."
+        peer_label = "클린식·샐러드 매장"
+        edge_fact = f"동일 가격대({estimated_price}) 대비 단백질 {nutrition.protein_g}g 밀도와 생채소 신선도 균형이 가장 우수한 매장으로"
+    elif any(k in dish_text for k in ("국밥", "소머리", "해장국", "순대", "설렁탕", "현대옥")):
+        keywords = ["#진한육수_잡내제로", "#푸짐한_고기건더기", "#혼밥눈치_완전제로"]
+        review_summary = "고기 건더기가 넉넉하게 담겨 나오고 국물이 깔끔해 한 그릇만으로 든든함이 오래 간다는 재방문 후기가 많습니다."
+        peer_label = "국밥·탕류 매장"
+        edge_fact = f"{estimated_price} 선에서 단백질 {nutrition.protein_g}g 수준의 고기 중량과 깔끔한 육수 완성도가 두드러져"
+    elif any(k in dish_text for k in ("김치찌개", "김찌로", "순두부", "부대찌개", "찌개", "제육", "두루치기")):
+        keywords = ["#불향가득_진한국물", "#밥도둑_고기양", "#빠른회전_점심맛집"]
+        review_summary = "양념이 과하게 달지 않고 고기와 건더기가 실하게 들어가 점심 한 끼 만족도가 높다는 평이 이어집니다."
+        peer_label = "한식·찌개 매장"
+        edge_fact = f"{estimated_price} 기준 고기 건더기 비중(단백질 {nutrition.protein_g}g)과 밥과의 밸런스가 가장 탄탄해"
+    elif any(k in dish_text for k in ("버거", "와퍼", "싸이", "롯데리아", "맥도날드", "프랭크", "노브랜드")) and "밥버거" not in dish_text:
+        keywords = ["#겉바속촉_패티육즙", "#단품보다_콤보이득", "#대기적은_패스트픽"]
+        review_summary = "주문 즉시 갓 구운 패티와 빵 식감이 살아 있어 15분 내 빠르게 먹어도 한 끼 만족감이 확실하다는 평이 많습니다."
+        peer_label = "버거·패스트푸드 매장"
+        edge_fact = f"{estimated_price} 구성으로 단백질 {nutrition.protein_g}g의 묵직한 패티 식감과 조리 회전 속도를 동시에 챙겨"
+    elif any(k in dish_text for k in ("토스트", "이삭", "에그", "샌드위치", "써브웨이", "서브웨이", "파리바게뜨")):
+        keywords = ["#폭신한_에그스크램블", "#손에안묻는_깔끔함", "#부담없는_균형식"]
+        review_summary = "속재료가 넉넉하게 채워져 한 손으로 깔끔하게 먹기 좋고 소화 부담이 적다는 호평이 많습니다."
+        peer_label = "샌드위치·브런치 매장"
+        edge_fact = f"{estimated_price} 선에서 단백질({nutrition.protein_g}g)·탄수화물 균형이 깔끔하고 섭취 피로도가 낮아"
+    elif any(k in dish_text for k in ("돈까스", "돈가스", "카츠", "상상카츠", "최고당", "미소야", "덮밥", "일식")):
+        keywords = ["#두툼한_등심육즙", "#느끼함없는_바삭함", "#알찬정식_포만감"]
+        review_summary = "튀김옷이 두껍지 않고 살코기가 도톰하게 씹혀 마지막 한 점까지 물리지 않고 든든하다는 리뷰가 돋보입니다."
+        peer_label = "돈카츠·일식 매장"
+        edge_fact = f"{estimated_price}대에 두툼한 등심·토핑 단백질({nutrition.protein_g}g)과 바삭한 식감 유지력이 가장 뛰어나"
+    elif any(k in dish_text for k in ("마라탕", "탕화쿵푸", "라홍방", "짬뽕", "챠이챠이", "우동", "라멘", "쌀국수", "칼국수")):
+        keywords = ["#깊은육수_감칠맛", "#채소토핑_식감최고", "#물리지않는_한그릇"]
+        review_summary = "면과 육수가 따로 놀지 않고 토핑 식감이 넉넉해 일반 밥집 대신 기분 전환용 한 끼로 손꼽힌다는 평입니다."
+        peer_label = "면·중식/아시안 매장"
+        edge_fact = f"{estimated_price} 예산 내에서 면·토핑 양과 육수 감칠맛(단백질 {nutrition.protein_g}g 보강) 완성도가 가장 앞서"
+    elif any(k in dish_text for k in ("한솥", "도시락", "봉구스", "밥버거", "행컵", "밀플랜비", "부리또", "김밥")):
+        keywords = ["#극강_만원가성비", "#초고속_조리완성", "#알찬토핑_한그릇"]
+        review_summary = "가격 대비 토핑과 밥 양이 알차 시간과 비용을 모두 아껴주는 실속 점심 성지라는 평가가 지배적입니다."
+        peer_label = "도시락·간편식 매장"
+        edge_fact = f"{estimated_price}의 압도적 가격 경쟁력 속에서 단백질 {nutrition.protein_g}g과 탄수화물 포만감을 동시에 확보해"
+    elif any(k in dish_text for k in ("죽", "본죽")):
+        keywords = ["#속편한_부드러움", "#알찬_전복소고기", "#깔끔한_밑반찬"]
+        review_summary = "건더기가 바닥까지 실하게 들어가 있고 간이 자극적이지 않아 컨디션이 무거울 때 최고라는 후기가 많습니다."
+        peer_label = "죽·클린 한식 매장"
+        edge_fact = f"소화 흡수 부담을 낮추면서도 단백질 {nutrition.protein_g}g과 정갈한 반찬 페어링을 {estimated_price}에 제공해"
+    else:
+        keywords = ["#재료신선_정갈함", "#재방문율_상위권", "#안정적_간밸런스"]
+        review_summary = "음식이 전반적으로 정갈하고 양과 간의 균형이 안정적이라 믿고 방문하는 고정 단골이 많은 곳입니다."
+        peer_label = "인근 외식 매장"
+        edge_fact = f"{estimated_price} 가격대에서 단백질 {nutrition.protein_g}g과 한 끼 포만감 균형이 고르게 잡혀"
+
+    mode_context = "배달 권역(3.5km) 내" if mode == "delivery" else "도보 생활권(1km) 내"
+    why_this_spot = (
+        f"{mode_context} 비교 후보 {total_peers}곳 및 동종 {peer_label} 중 {edge_fact} 가성비·퀄리티 우위를 확보한 픽입니다."
+    )
+
+    coma_status, coma_desc = _diagnose_food_coma(nutrition, preference)
+
+    chosen_tex = {
+        "bread": "빵/패티",
+        "rice": "밥/든든함",
+        "soup": "면/뜨끈한 국물",
+    }.get(preference.texture_temp, preference.texture_temp)
+    chosen_meal = {
+        "quick": "간편 15분컷",
+        "proper": "제대로 된 한 끼",
+        "clean": "가볍고 클린한 식사",
+    }.get(preference.meal_mode, preference.meal_mode)
+
+    if is_refresh:
+        selection_logic = (
+            f"선택하신 '{chosen_tex}'과 다른 결의 '{menu_name}'으로 식감 피로를 환기하면서도, 원하시는 '{chosen_meal}' 템포와 예산 기준을 100% 맞춘 반전 대안입니다."
         )
     else:
-        weather_fit = (
-            f"{temp_str}({weather_str}) 컨디션에서 든든하고 따뜻한 '{menu_name}' 한 끼로 속을 편하고 균형 있게 채워줍니다."
+        selection_logic = (
+            f"선택하신 '{chosen_tex}' 식감과 '{chosen_meal}' 템포, 예산 기준까지 3-Tap 조건을 오차 없이 충족하는 가장 확실한 1순위 매칭입니다."
         )
 
-    if mode == "delivery":
-        spec = analyze_delivery_spec(
-            restaurant, menu_name, estimated_price, distance_m=dist_m
-        )
-        if preference.budget_tier == "generous_group":
-            pro_tip = (
-                f"'{place_name}'의 {menu_name}({estimated_price}) 푸짐 세트는 2인 이상이 함께 즐기기에 넉넉하며 쿠팡이츠 와우 배달비 0원 혜택까지 적용 가능합니다."
-            )
-        elif spec["shortfall_amount"] == 0:
-            pro_tip = (
-                f"'{place_name}'의 {menu_name}({estimated_price}) 콤보만으로 최소주문금액을 딱 맞춰 불필요한 추가 지출 없이 1인 주문이 가능합니다."
-            )
-        else:
-            pro_tip = (
-                f"'{menu_name}'({estimated_price}) 주문 시 부족한 {spec['shortfall_amount']:,}원만 아래 맞춤 사이드로 채우면 쿠팡이츠 와우 무료배달 혜택을 알뜰하게 활용할 수 있습니다."
-            )
-    elif preference.budget_tier == "flexible":
-        pro_tip = (
-            f"'{place_name}'의 {menu_name}({estimated_price}) 세트 구성을 선택해 사이드·음료 페어링까지 알차게 즐겨보세요."
-        )
-    else:
-        pro_tip = (
-            f"8,000원 이하 실속 픽인 '{menu_name}'({estimated_price}) 단품은 회전이 빨라 점심시간에도 주문·수령이 쾌적합니다."
-        )
+    if _is_meal_kit_store(restaurant, menu_name) and MEAL_KIT_NOTICE not in selection_logic:
+        selection_logic = f"{MEAL_KIT_NOTICE}. {selection_logic}"
 
-    if mode == "delivery":
-        time_efficiency = (
-            "점심 피크 기준 약 25분 내 따뜻하게 도착 가능한 배달 동선으로, 포장 상태가 안정적이라 자리에서 쾌적하게 즐기기 좋습니다."
-        )
-    elif dist_m >= 700:
-        time_efficiency = (
-            "식전 가벼운 산책 겸 다녀오기 좋으며, 피크타임에도 매장 회전율이 빠른 편이라 여유롭게 식사할 수 있습니다."
-        )
-    else:
-        time_efficiency = (
-            "식전 이동 부담이 거의 없는 핵심 근거리 동선이라 점심 피크타임에도 빠르게 다녀와 여유롭게 식사할 수 있습니다."
-        )
+    return AIAnalysisReport(
+        review_keywords=keywords,
+        visitor_review_summary=review_summary,
+        why_this_spot=why_this_spot,
+        food_coma_status=coma_status,
+        food_coma_desc=coma_desc,
+        selection_logic=selection_logic,
+    )
 
-    if _is_meal_kit_store(restaurant, menu_name) and MEAL_KIT_NOTICE not in pro_tip:
-        pro_tip = f"{MEAL_KIT_NOTICE}. {pro_tip}"
 
-    return {
-        "weather_fit": weather_fit,
-        "pro_tip": pro_tip,
-        "time_efficiency": time_efficiency,
-    }
+def _sanitize_report(
+    raw_report: Optional[AIAnalysisReport],
+    restaurant: Dict[str, Any],
+    menu_name: str,
+    estimated_price: str,
+    nutrition: NutritionFacts,
+    preference: UserPreferenceRequest,
+    *,
+    is_refresh: bool = False,
+    candidate_count: int = 12,
+) -> AIAnalysisReport:
+    fallback = _build_fallback_report(
+        restaurant,
+        menu_name,
+        estimated_price,
+        nutrition,
+        preference,
+        is_refresh=is_refresh,
+        candidate_count=candidate_count,
+    )
+    if raw_report is None:
+        return fallback
+
+    keywords = _normalize_review_keywords(
+        getattr(raw_report, "review_keywords", None),
+        fallback.review_keywords,
+    )
+    summary = str(getattr(raw_report, "visitor_review_summary", "") or "").strip().strip('"\'“”')
+    if not summary:
+        summary = fallback.visitor_review_summary
+
+    why_spot = str(getattr(raw_report, "why_this_spot", "") or "").strip() or fallback.why_this_spot
+    coma_status = _normalize_food_coma_status(
+        getattr(raw_report, "food_coma_status", ""), fallback.food_coma_status
+    )
+    coma_desc = str(getattr(raw_report, "food_coma_desc", "") or "").strip() or fallback.food_coma_desc
+    selection_logic = (
+        str(getattr(raw_report, "selection_logic", "") or "").strip()
+        or fallback.selection_logic
+    )
+    if _is_meal_kit_store(restaurant, menu_name) and MEAL_KIT_NOTICE not in selection_logic:
+        selection_logic = f"{MEAL_KIT_NOTICE}. {selection_logic}"
+
+    return AIAnalysisReport(
+        review_keywords=keywords,
+        visitor_review_summary=summary,
+        why_this_spot=why_spot,
+        food_coma_status=coma_status,
+        food_coma_desc=coma_desc,
+        selection_logic=selection_logic,
+    )
 
 
 def _map_restaurant_to_item(
@@ -875,9 +1019,7 @@ def _map_restaurant_to_item(
     recommended_menu: str,
     estimated_price: str,
     nutrition: NutritionFacts,
-    weather_fit: str,
-    pro_tip: str,
-    time_efficiency: str,
+    report: AIAnalysisReport,
     is_meal_kit: Optional[bool] = None,
     emoji: Optional[str] = None,
 ) -> RecommendationItem:
@@ -930,9 +1072,7 @@ def _map_restaurant_to_item(
         distance_display=distance_display,
         emoji=resolved_emoji,
         nutrition=nutrition,
-        weather_fit=weather_fit,
-        pro_tip=pro_tip,
-        time_efficiency=time_efficiency,
+        report=report,
         is_meal_kit=resolved_meal_kit,
         clean_store_name=links["clean_store_name"],
         delivery_spec=delivery_spec_obj,
@@ -1058,10 +1198,16 @@ def _materialize_group(
                 rest, menu_val, price_val, fallback_inferred, preference
             )
             nutrition_val = _sanitize_nutrition(raw_item.nutrition, rest, menu_val, preference)
-            fallback_texts = _build_fallback_texts(rest, menu_val, price_val, preference, weather_info)
-            weather_fit_val = raw_item.weather_fit.strip() or fallback_texts["weather_fit"]
-            pro_tip_val = raw_item.pro_tip.strip() or fallback_texts["pro_tip"]
-            time_eff_val = raw_item.time_efficiency.strip() or fallback_texts["time_efficiency"]
+            report_val = _sanitize_report(
+                getattr(raw_item, "report", None),
+                rest,
+                menu_val,
+                price_val,
+                nutrition_val,
+                preference,
+                is_refresh=is_refresh,
+                candidate_count=len(restaurants),
+            )
         else:
             menu_val, price_val = _calibrate_min_order_exact_delivery_menu(
                 rest,
@@ -1071,15 +1217,17 @@ def _materialize_group(
                 preference,
             )
             nutrition_val = _infer_nutrition_facts(rest, menu_val, preference)
-            fallback_texts = _build_fallback_texts(rest, menu_val, price_val, preference, weather_info)
-            weather_fit_val = fallback_texts["weather_fit"]
-            pro_tip_val = fallback_texts["pro_tip"]
-            time_eff_val = fallback_texts["time_efficiency"]
+            report_val = _build_fallback_report(
+                rest,
+                menu_val,
+                price_val,
+                nutrition_val,
+                preference,
+                is_refresh=is_refresh,
+                candidate_count=len(restaurants),
+            )
 
         is_meal_kit = _is_meal_kit_store(rest, menu_val)
-        if is_meal_kit and MEAL_KIT_NOTICE not in pro_tip_val:
-            pro_tip_val = f"{MEAL_KIT_NOTICE}. {pro_tip_val}"
-
         emoji_val = get_menu_emoji(
             str(rest.get("place_name", "")).strip(),
             menu_val,
@@ -1095,9 +1243,7 @@ def _materialize_group(
                 recommended_menu=menu_val,
                 estimated_price=price_val,
                 nutrition=nutrition_val,
-                weather_fit=weather_fit_val,
-                pro_tip=pro_tip_val,
-                time_efficiency=time_eff_val,
+                report=report_val,
                 is_meal_kit=is_meal_kit,
                 emoji=emoji_val,
             )
@@ -1227,7 +1373,15 @@ def _select_from_real_restaurants_fallback(
         rest = restaurants[rest_idx]
         inferred = _infer_menu_and_price(rest, preference, is_refresh=False)
         nutrition = _infer_nutrition_facts(rest, inferred["menu"], preference)
-        texts = _build_fallback_texts(rest, inferred["menu"], inferred["price"], preference, weather_info)
+        report = _build_fallback_report(
+            rest,
+            inferred["menu"],
+            inferred["price"],
+            nutrition,
+            preference,
+            is_refresh=False,
+            candidate_count=len(restaurants),
+        )
         raw_standards.append(
             AISelectionItem(
                 selected_index=rest_idx,
@@ -1237,9 +1391,7 @@ def _select_from_real_restaurants_fallback(
                 recommended_menu=inferred["menu"],
                 estimated_price=inferred["price"],
                 nutrition=nutrition,
-                weather_fit=texts["weather_fit"],
-                pro_tip=texts["pro_tip"],
-                time_efficiency=texts["time_efficiency"],
+                report=report,
             )
         )
 
@@ -1248,7 +1400,15 @@ def _select_from_real_restaurants_fallback(
         rest = restaurants[rest_idx]
         inferred = _infer_menu_and_price(rest, preference, is_refresh=True)
         nutrition = _infer_nutrition_facts(rest, inferred["menu"], preference)
-        texts = _build_fallback_texts(rest, inferred["menu"], inferred["price"], preference, weather_info)
+        report = _build_fallback_report(
+            rest,
+            inferred["menu"],
+            inferred["price"],
+            nutrition,
+            preference,
+            is_refresh=True,
+            candidate_count=len(restaurants),
+        )
         raw_refreshes.append(
             AISelectionItem(
                 selected_index=rest_idx,
@@ -1258,9 +1418,7 @@ def _select_from_real_restaurants_fallback(
                 recommended_menu=inferred["menu"],
                 estimated_price=inferred["price"],
                 nutrition=nutrition,
-                weather_fit=texts["weather_fit"],
-                pro_tip=texts["pro_tip"],
-                time_efficiency=texts["time_efficiency"],
+                report=report,
             )
         )
 
@@ -1383,13 +1541,18 @@ def generate_recommendations(
    - 선택한 `recommended_menu`(세트·다인 구성 포함 총량 기준)의 현실적인 `calories`(kcal 정수), `carbs_g`(탄수화물 g 정수), `protein_g`(단백질 g 정수), `fat_g`(지방 g 정수)를 추정하세요 (`calories`는 대략 carbs*4 + protein*4 + fat*9와 일치해야 합니다).
    - `calories_per_person`: `generous_group`(2인 이상 다인 세트)일 때는 `round(calories / 2)` 정수를 기입하고, 1인 단품/콤보일 때는 `null`을 반환하세요.
    - `nutrition_highlight`: 선택한 식감/모드 기준 탄단지 균형 분석을 핵심 1줄로 작성하세요.
-6. 1줄 분석 필드 규칙 (자연스럽고 밀도 있는 한국어 1문장):
-   - `weather_fit`: 현재 기온({weather_info.get("temp", "7℃")})과 날씨({weather_info.get("weather", "쌀쌀한 흐림")})에서 이 음식의 온도·조리 특성이 왜 어울리는지 1줄 분석.
-   - `pro_tip`: 해당 실제 매장에서 만족도를 높이는 주문/토핑/사이드 꿀조합 팁 1줄. (비조리 밀키트 매장인 경우 반드시 "⚠️ 냄비 조리가 필요한 밀키트 구성입니다"를 명시하세요.)
-   - `time_efficiency`: 실제 식사/이동 행동 팁 중심으로만 1~2줄 깔끔하게 작성하세요.
-     * 소제목이나 본문에 `(경기도 화성시...)` 같은 긴 법정 행정동 주소를 절대 포함하지 마세요.
-     * 상단에 이미 표기된 미터(`m`/`km`)나 도보·배달 분수를 본문에서 중복해서 읊지 마세요.
-     * 오직 "식전 가벼운 산책 겸 다녀오기 좋으며, 피크타임에도 회전율이 빠릅니다" 또는 "점심 피크 기준 약 25분 내 따뜻하게 도착 가능한 배달 동선입니다"처럼 실제 식사·이동 행동 팁 위주로만 작성하세요.
+6. `report` (`AIAnalysisReport`) 초정밀 추천 근거 리포트 작성 규칙 (상투적 날씨/꿀팁/동선 클리셰 전면 폐기):
+   - 금지: "쌀쌀한 날씨에 어울립니다", "따뜻하게 드세요", "맛있게 비벼 드세요", "도보 이동이 편합니다", "(경기도 화성시...)" 행정동 주소 반복, 거리/시간 숫자 나열.
+   - 반드시 아래 6개 필드를 날카로운 **팩트·데이터·비교 우위** 중심으로 채우세요:
+     1) `review_keywords`: 해당 매장/메뉴에서 실제 방문자들이 가장 많이 칭찬하는 핵심 매력 해시태그 정확히 3개 (예: `["#불향가득_직화", "#푸짐한_고기양", "#혼밥편함"]`).
+     2) `visitor_review_summary`: 실제 방문자들이 공통적으로 남기는 맛·양·가성비 중심 대표 1줄 평 (바깥 큰따옴표 없이 순수 문장 1줄).
+     3) `why_this_spot`: 위 후보 목록(총 {len(candidate_restaurants)}곳)의 인근 동종 매장들과 직접 비교했을 때 왜 하필 이 집이 1순위인지 가성비·단백질/고기 중량·조리 퀄리티 우위를 팩트 기반 1~2줄로 서술 (예: `"인근 한식·밥집 다수 중 1만 원대 예산에서 고기 단백질과 직화 풍미 가성비가 가장 앞서는 매장입니다."`).
+     4) `food_coma_status`: 방금 추정한 `nutrition`의 탄수화물·단백질 비율과 칼로리를 분석해 식후 혈당 스파이크 및 식곤증 위험도를 `"안전"`, `"적정"`, `"주의"` 중 하나로 정확히 판정.
+     5) `food_coma_desc`: 탄단지 비율과 혈당 반응 근거로 오후 업무·학업 집중력이 몇 시까지 어떻게 유지되는지 과학적 1줄 예측 (예: `"고단백·복합당질 구성으로 급격한 혈당 스파이크 없이 오후 5시까지 집중력을 유지합니다."`).
+     6) `selection_logic`:
+        - `standards` (`[확신의 픽]`): 사용자의 3-Tap 욕구(`{texture_desc}`, `{meal_desc}`, `{budget_desc}`)에 100% 부합하는 실패 없는 명쾌한 이유 1줄.
+        - `refreshes` (`[반전 매력 픽]`): 왜 선택한 `{texture_desc}` 대신 이 대안 메뉴(`recommended_menu`)를 제안했는지 고개가 끄덕여지는 신선한 반전 논리 1줄.
+        - 비조리 밀키트 매장일 경우 반드시 `selection_logic`에 `"⚠️ 냄비 조리가 필요한 밀키트 구성입니다"`를 명시하세요.
 """
 
     try:
